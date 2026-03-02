@@ -20,6 +20,12 @@ from typing import Any, AsyncIterator, Optional
 from config_schema import AgentOSConfig, ProviderConfig
 from contracts.interfaces import APICallRecord
 
+# 加入 router import
+try:
+    from .router import SmartRouter
+except ImportError:
+    from router import SmartRouter
+
 logger = logging.getLogger(__name__)
 
 
@@ -138,32 +144,27 @@ class APIGateway:
         for p in config.gateway.providers:
             self._providers[p.name] = p
 
-        logger.info(f"🌐 API Gateway 啟動: {len(self._providers)} providers 可用")
+        self._router = SmartRouter(config)
+        logger.info(f"🌐 API Gateway 啟動: {len(self._providers)} providers 可用，SmartRouter 就緒")
 
-    def resolve_model(self, agent_id: str = "default") -> tuple[ProviderConfig, str]:
+    def resolve_model(self, agent_id: str = "default", messages: list[dict] = None, tools: list[dict] = None) -> tuple[ProviderConfig, str, Optional[str]]:
         """
-        根據 agent_id 解析出對應的 Provider 和 Model。
-        config.yaml 格式: agents.default = "openai/gpt-4o"
+        改由 SmartRouter 解析最佳的 Provider 與 Model。
         """
-        route = self.config.gateway.agents.get(agent_id, self.config.gateway.agents.get("default", "openai/gpt-4o"))
-
-        if "/" in route:
-            provider_name, model = route.split("/", 1)
-        else:
-            provider_name = "openai"
-            model = route
-
-        provider = self._providers.get(provider_name)
-        if not provider:
-            # Failover: 用第一個有 key 的 provider
-            for p in self._providers.values():
-                if p.api_key or p.base_url:
-                    logger.warning(f"⚠️ Provider '{provider_name}' 不存在，failover 到 '{p.name}'")
-                    return p, model
-            # 全部沒 key，回傳空的
-            return ProviderConfig(name=provider_name), model
-
-        return provider, model
+        if messages is None:
+            messages = []
+            
+        provider_name, model, override_url = self._router.route(agent_id, messages, tools)
+        base_provider = self._providers.get(provider_name, ProviderConfig(name=provider_name))
+        
+        # 建立一個暫時的 Config 用於本次呼叫
+        call_provider = ProviderConfig(
+            name=base_provider.name,
+            api_key=base_provider.api_key,
+            base_url=override_url or base_provider.base_url,
+            models=base_provider.models
+        )
+        return call_provider, model
 
     async def call(
         self,
@@ -177,12 +178,12 @@ class APIGateway:
         發送 API 請求 (非串流模式，等待完整回應)。
         含自動重試邏輯。
         """
-        provider, model = self.resolve_model(agent_id)
         retry_cfg = self.config.engine.retry
 
         last_error: Optional[Exception] = None
 
         for attempt in range(retry_cfg.max_attempts):
+            provider, model = self.resolve_model(agent_id, messages, tools)
             try:
                 result = await self._do_call(
                     provider=provider,
@@ -196,6 +197,12 @@ class APIGateway:
 
             except APIError as e:
                 last_error = e
+                if e.status_code == 599:
+                    logger.warning("🚨 Gateway 捕獲網路斷線 (599)，強制 SmartRouter 切換為離線模式！")
+                    self._router.set_offline_mode(True)
+                    # 斷網後不等待，直接換本地重試
+                    continue
+                    
                 if e.status_code in retry_cfg.retryable_codes and attempt < retry_cfg.max_attempts - 1:
                     wait = retry_cfg.backoff_multiplier ** attempt
                     logger.warning(f"⚠️ API 錯誤 {e.status_code}，{wait}s 後重試 (attempt {attempt + 1})")
@@ -243,6 +250,8 @@ class APIGateway:
             except httpx.HTTPStatusError as e:
                 error_body = e.response.text
                 raise APIError(e.response.status_code, f"API Error: {error_body}")
+            except httpx.ConnectError as e:
+                raise APIError(599, f"Network connection failed: {e}")
             except httpx.RequestError as e:
                 raise APIError(503, f"Request failed: {e}")
 

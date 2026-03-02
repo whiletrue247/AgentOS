@@ -1,0 +1,111 @@
+{
+    "models": {
+        "openai/gpt-4o": {
+            "provider": "openai",
+            "model": "gpt-4o",
+            "privacy": "cloud",
+            "context_window": 128000,
+            "cost_per_m_tokens": 5.0,
+            "capabilities": [
+                "reasoning",
+                "coding",
+                "vision",
+                "tool_use",
+                "orchestration"
+            ],
+            "speed_tier": "fast"
+        },
+        "anthropic/claude-3-5-sonnet-20241022": {
+            "provider": "anthropic",
+            "model": "claude-3-5-sonnet-20241022",
+            "privacy": "cloud",
+            "context_window": 200000,
+            "cost_per_m_tokens": 3.0,
+            "capabilities": [
+                "reasoning",
+                "coding",
+                "vision",
+                "tool_use",
+                "orchestration"
+            ],
+            "speed_tier": "fast"
+        },
+        "groq/llama-3.1-70b-versatile": {
+            "provider": "groq",
+            "model": "llama-3.1-70b-versatile",
+            "privacy": "cloud_fast",
+            "context_window": 128000,
+            "cost_per_m_tokens": 0.59,
+            "capabilities": [
+                "reasoning",
+                "coding",
+                "tool_use"
+            ],
+            "speed_tier": "ultra_fast"
+        },
+        "groq/llama-3.1-8b-instant": {
+            "provider": "groq",
+            "model": "llama-3.1-8b-instant",
+            "privacy": "cloud_fast",
+            "context_window": 131072,
+            "cost_per_m_tokens": 0.05,
+            "capabilities": [
+                "summarize",
+                "basic",
+                "tool_use"
+            ],
+            "speed_tier": "ultra_fast"
+        },
+        "ollama/llama3.2": {
+            "provider": "ollama",
+            "model": "llama3.2",
+            "privacy": "local",
+            "context_window": 8192,
+            "cost_per_m_tokens": 0.0,
+            "capabilities": [
+                "summarize",
+                "basic"
+            ],
+            "speed_tier": "local"
+        },
+        "ollama/qwen2.5-coder": {
+            "provider": "ollama",
+            "model": "qwen2.5-coder",
+            "privacy": "local",
+            "context_window": 32768,
+            "cost_per_m_tokens": 0.0,
+            "capabilities": [
+                "coding"
+            ],
+            "speed_tier": "local"
+        }
+    },
+    "roles": {
+        "orchestrator": [
+            "anthropic/claude-3-5-sonnet-20241022",
+            "openai/gpt-4o"
+        ],
+        "coder": [
+            "anthropic/claude-3-5-sonnet-20241022",
+            "openai/gpt-4o",
+            "groq/llama-3.1-70b-versatile",
+            "ollama/qwen2.5-coder"
+        ],
+        "researcher": [
+            "groq/llama-3.1-70b-versatile",
+            "openai/gpt-4o"
+        ],
+        "writer": [
+            "groq/llama-3.1-8b-instant",
+            "ollama/llama3.2"
+        ],
+        "critic": [
+            "openai/gpt-4o",
+            "anthropic/claude-3-5-sonnet-20241022"
+        ],
+        "fallback_offline": [
+            "ollama/llama3.2",
+            "ollama/qwen2.5-coder"
+        ]
+    }
+}
