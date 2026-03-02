@@ -13,6 +13,7 @@ from typing import Optional
 
 from contracts.interfaces import ToolSchema
 from config_schema import AgentOSConfig
+from paths import get_catalog_path
 
 # 嘗試匯入 BM25Index。由於路徑關係，可能需要絕對或相對匯入。
 try:
@@ -32,9 +33,9 @@ logger = logging.getLogger(__name__)
 
 
 class ToolCatalog:
-    def __init__(self, config: Optional[AgentOSConfig] = None, catalog_path: str = "./tools/catalog.json"):
+    def __init__(self, config: Optional[AgentOSConfig] = None, catalog_path: Optional[str] = None):
         self.config = config
-        self.catalog_path = Path(catalog_path)
+        self.catalog_path = Path(catalog_path or get_catalog_path())
         self.tools: dict[str, ToolSchema] = {}
         self.bm25 = BM25Index()
         

@@ -12,6 +12,7 @@ import logging
 from pathlib import Path
 
 from config_schema import AgentOSConfig
+from paths import get_soul_path
 
 logger = logging.getLogger(__name__)
 
@@ -54,10 +55,11 @@ User's description of their desired Agent:
 Output ONLY the markdown content for the SOUL.md file, starting with the `# [Agent Name]`. Do not include any other conversational filler.
 """
 
-    async def generate(self, user_description: str, save_path: str = "./SOUL.md") -> str:
+    async def generate(self, user_description: str, save_path: Optional[str] = None) -> str:
         """
-        透過 Engine (LLM) 根據使用者描述生成 SOUL.md，並存檔。
+        利用 LLM (透過 Gateway) 一鍵生成 SOUL.md。
         """
+        save_path = save_path or str(get_soul_path())
         if not self.engine:
             raise ValueError("SoulGenerator requires an initialized Engine to work.")
             

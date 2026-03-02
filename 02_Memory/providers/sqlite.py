@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from contracts.interfaces import MemoryProvider, UnifiedMemoryItem
+from paths import get_sqlite_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -31,19 +32,18 @@ def _str_to_dt(s: Optional[str]) -> Optional[datetime]:
     return datetime.strptime(s, _DT_FMT) if s else None
 
 
-class SQLiteMemoryProvider:
+class SQLiteMemoryProvider(MemoryProvider):
     """
-    基於 SQLite + FTS5 的 MemoryProvider。
-    FTS5 是 SQLite 內建的全文檢索引擎，底層使用 BM25 排序。
+    SQLite Memory Provider (包含 FTS5 全文檢索與 bm25_index)
     """
 
-    def __init__(self, db_path: str = "./memory.db"):
-        self._db_path = db_path
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(db_path)
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = db_path or str(get_sqlite_db_path())
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(self.db_path)
         self._conn.row_factory = sqlite3.Row
         self._init_tables()
-        logger.info(f"💾 SQLite Memory Provider 已啟動: {db_path}")
+        logger.info(f"💾 SQLite Memory Provider 已啟動: {self.db_path}")
 
     def _init_tables(self) -> None:
         cur = self._conn.cursor()

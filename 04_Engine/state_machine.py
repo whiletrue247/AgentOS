@@ -22,6 +22,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from paths import get_data_dir
+
 logger = logging.getLogger(__name__)
 
 
@@ -66,7 +68,9 @@ class TaskRecord:
 class StateMachine:
     """任務狀態機"""
 
-    def __init__(self, checkpoint_dir: str = "./checkpoints"):
+    def __init__(self, checkpoint_dir: Optional[str] = None):
+        if checkpoint_dir is None:
+            checkpoint_dir = str(get_data_dir() / "checkpoints")
         self._tasks: dict[str, TaskRecord] = {}
         self._checkpoint_dir = Path(checkpoint_dir)
         self._checkpoint_dir.mkdir(parents=True, exist_ok=True)

@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Optional
 
 from config_schema import AgentOSConfig
+from paths import get_cost_history_path
 from contracts.interfaces import APICallRecord, CostReport
 
 logger = logging.getLogger(__name__)
@@ -29,12 +30,12 @@ M = 1_000_000  # 1M = 100 萬 token
 
 class CostGuard:
     """
-    Token 消耗追蹤 + 預算守衛。
+    每日預算守衛
     """
 
-    def __init__(self, config: AgentOSConfig, history_path: str = "./logs/cost_history.json"):
-        self.config = config
-        self._history_path = Path(history_path)
+    def __init__(self, config: AgentOSConfig, history_path: Optional[str] = None):
+        self.config = config.budget
+        self._history_path = Path(history_path or get_cost_history_path())
         self._records: list[APICallRecord] = []
 
         # 每日統計快取 { "2026-03-03": { "input": 12345, "output": 6789 } }

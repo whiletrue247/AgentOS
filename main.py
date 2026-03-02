@@ -70,7 +70,7 @@ async def boot() -> None:
     memory_mod = import_module("02_Memory.memory_manager")
     sqlite_mod = import_module("02_Memory.providers.sqlite")
 
-    sqlite_provider = sqlite_mod.SQLiteMemoryProvider(db_path="./data/memory.db")
+    sqlite_provider = sqlite_mod.SQLiteMemoryProvider()
     memory_manager = memory_mod.MemoryManager(provider=sqlite_provider)
     logger.info("✅ Memory 已啟動 (SQLite)")
 

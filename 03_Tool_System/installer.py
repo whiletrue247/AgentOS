@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from contracts.interfaces import ToolSchema
+from paths import get_tools_dir
 # 在開發環境中，直接匯入 catalog 模組
 try:
     from .catalog import ToolCatalog
@@ -32,11 +33,11 @@ logger = logging.getLogger(__name__)
 
 
 class ToolInstaller:
-    """工具安裝器"""
+    """負責各種工具的外置安裝與下載"""
 
-    def __init__(self, catalog: ToolCatalog, tools_dir: str = "./tools"):
+    def __init__(self, catalog: ToolCatalog, tools_dir: Optional[str] = None):
         self.catalog = catalog
-        self.tools_dir = Path(tools_dir)
+        self.tools_dir = Path(tools_dir) if tools_dir else get_tools_dir()
         self.plugins_dir = self.tools_dir / "plugins"
         self.plugins_dir.mkdir(parents=True, exist_ok=True)
         self.req_file = self.tools_dir / "sandbox_requirements.txt"

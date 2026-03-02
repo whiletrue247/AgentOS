@@ -15,6 +15,8 @@ from typing import Any, Optional
 
 import yaml
 
+from paths import get_soul_path, get_config_path
+
 
 # ============================================================
 # Dataclass 定義 (每個區塊對應 config.yaml 的一個頂層 key)
@@ -40,7 +42,7 @@ class GatewayConfig:
 @dataclass
 class KernelConfig:
     """靈魂載入設定"""
-    soul_path: str = "./SOUL.md"
+    soul_path: str = field(default_factory=lambda: str(get_soul_path()))
 
 
 @dataclass
@@ -178,13 +180,16 @@ def _dict_to_dataclass(cls, data: dict) -> Any:
     return cls(**kwargs)
 
 
-def load_config(config_path: str = "./config.yaml") -> AgentOSConfig:
+def load_config(config_path: Optional[str] = None) -> AgentOSConfig:
     """
     載入 config.yaml 並回傳 AgentOSConfig。
     缺少的欄位自動填入安全預設值。
     檔案不存在時回傳全預設設定。
     """
-    path = Path(config_path)
+    if config_path is None:
+        path = get_config_path()
+    else:
+        path = Path(config_path)
 
     if not path.exists():
         return AgentOSConfig()
@@ -195,7 +200,7 @@ def load_config(config_path: str = "./config.yaml") -> AgentOSConfig:
     return _dict_to_dataclass(AgentOSConfig, raw)
 
 
-def save_config(config: AgentOSConfig, config_path: str = "./config.yaml") -> None:
+def save_config(config: AgentOSConfig, config_path: Optional[str] = None) -> None:
     """將 AgentOSConfig 序列化並寫入 config.yaml"""
     import dataclasses
 
@@ -204,7 +209,10 @@ def save_config(config: AgentOSConfig, config_path: str = "./config.yaml") -> No
             return {k: _to_dict(v) for k, v in dataclasses.asdict(obj).items()}
         return obj
 
-    path = Path(config_path)
+    if config_path is None:
+        path = get_config_path()
+    else:
+        path = Path(config_path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(path, "w", encoding="utf-8") as f:

@@ -22,6 +22,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config_schema import load_config
 from contracts.interfaces import ToolCallResult
+from paths import get_data_dir
 
 async def run_e2e_test():
     print("="*60)
@@ -59,8 +60,9 @@ Whenever you are asked to write code, just use writing tools.
     # 2. Memory (SQLite)
     memory_mod = import_module("02_Memory.memory_manager")
     sqlite_mod = import_module("02_Memory.providers.sqlite")
-    
-    test_db = "./data/test_memory.db"
+    # 準備測試用的隔離資料夾與檔案
+    data_dir = get_data_dir()
+    test_db = str(data_dir / "test_memory.db")
     if os.path.exists(test_db):
         os.remove(test_db)
     sqlite_provider = sqlite_mod.SQLiteMemoryProvider(db_path=test_db)
@@ -73,7 +75,8 @@ Whenever you are asked to write code, just use writing tools.
     subprocess_mod = import_module("03_Tool_System.sandbox_subprocess")
     truncator_mod = import_module("03_Tool_System.truncator")
     
-    tool_catalog = catalog_mod.ToolCatalog(config=config, catalog_path="./data/test_catalog.json")
+    cat_path = str(data_dir / "test_catalog.json")
+    tool_catalog = catalog_mod.ToolCatalog(config=config, catalog_path=cat_path)
     sys_tools_mod.register_system_tools(tool_catalog)
     
     subprocess_sandbox = subprocess_mod.SubprocessSandbox(work_dir=".")
@@ -85,10 +88,12 @@ Whenever you are asked to write code, just use writing tools.
     gateway_mod = import_module("04_Engine.gateway")
     rate_mod = import_module("04_Engine.rate_limiter")
     cost_mod = import_module("04_Engine.cost_guard")
+    state_mod = import_module("04_Engine.state_machine") # Added import for state_machine
     
     gateway = gateway_mod.APIGateway(config)
-    rate_limiter = rate_mod.RateLimiter(rpm=60, tpm=200000)
-    cost_guard = cost_mod.CostGuard(config, history_path="./data/test_cost.json")
+    rate_limiter = rate_mod.RateLimiter(rpm=60, tpm=200000) # --- 守衛 / 狀態機 ---
+    cost_guard = cost_mod.CostGuard(config, history_path=str(data_dir / "test_cost.json"))
+    state_machine = state_mod.StateMachine(checkpoint_dir=str(data_dir / "test_checkpoints"))
     
     engine = engine_mod.Engine(config)
     
