@@ -77,16 +77,31 @@ async def boot() -> None:
     # ── Step 4: 工具系統 (03_Tool_System) ───────────
     catalog_mod = import_module("03_Tool_System.catalog")
     sys_tools_mod = import_module("03_Tool_System.sys_tools")
-    sandbox_mod = import_module("03_Tool_System.sandbox")
+    sandbox_module = import_module("03_Tool_System.sandbox")
     subprocess_mod = import_module("03_Tool_System.sandbox_subprocess")
+    docker_mod = import_module("03_Tool_System.sandbox_docker")
     truncator_mod = import_module("03_Tool_System.truncator")
 
     tool_catalog = catalog_mod.ToolCatalog(config=config)
     sys_tools_mod.register_system_tools(tool_catalog)
 
-    # Sandbox 執行器
-    subprocess_sandbox = subprocess_mod.SubprocessSandbox()
-    sandbox_manager = sandbox_mod.SandboxManager(config=config, provider=subprocess_sandbox)
+    # 偵測是否有裝 Docker
+    import subprocess
+    has_docker = False
+    try:
+        subprocess.run(["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        has_docker = True
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+
+    if has_docker:
+        logger.info("🐳 檢測到 Docker，啟用強隔離 DockerSandbox")
+        sandbox_provider = docker_mod.DockerSandbox(work_dir="./data/sandbox_workspace")
+    else:
+        logger.warning("⚠️ 找不到 Docker，降級使用零隔離 SubprocessSandbox")
+        sandbox_provider = subprocess_mod.SubprocessSandbox(work_dir="./data/sandbox_workspace")
+        
+    sandbox_manager = sandbox_module.SandboxManager(config=config, provider=sandbox_provider)
     truncator = truncator_mod.Truncator(config=config)
 
     logger.info(f"✅ 工具系統已啟動 ({len(tool_catalog.get_all_tools())} 工具)")

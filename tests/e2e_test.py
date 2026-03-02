@@ -73,14 +73,30 @@ Whenever you are asked to write code, just use writing tools.
     sys_tools_mod = import_module("03_Tool_System.sys_tools")
     sandbox_module = import_module("03_Tool_System.sandbox")
     subprocess_mod = import_module("03_Tool_System.sandbox_subprocess")
+    docker_mod = import_module("03_Tool_System.sandbox_docker")
     truncator_mod = import_module("03_Tool_System.truncator")
     
     cat_path = str(data_dir / "test_catalog.json")
     tool_catalog = catalog_mod.ToolCatalog(config=config, catalog_path=cat_path)
     sys_tools_mod.register_system_tools(tool_catalog)
     
-    subprocess_sandbox = subprocess_mod.SubprocessSandbox(work_dir=".")
-    sandbox_manager = sandbox_module.SandboxManager(config=config, provider=subprocess_sandbox)
+    # 偵測 Docker
+    import subprocess
+    has_docker = False
+    try:
+        subprocess.run(["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        has_docker = True
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+        
+    if has_docker:
+        print("🐳 檢測到 Docker，啟用強隔離 DockerSandbox 進行測試")
+        sandbox_provider = docker_mod.DockerSandbox(work_dir=".")
+    else:
+        print("⚠️ 找不到 Docker，降級使用零隔離 SubprocessSandbox 進行測試")
+        sandbox_provider = subprocess_mod.SubprocessSandbox(work_dir=".")
+        
+    sandbox_manager = sandbox_module.SandboxManager(config=config, provider=sandbox_provider)
     truncator = truncator_mod.Truncator(config=config)
 
     # 4. Engine
