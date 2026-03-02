@@ -1,4 +1,4 @@
-# Agent Base OS — 核心架構藍圖 (v4.0)
+# Agent Base OS — 核心架構藍圖 (v5.0)
 
 為 AI Agent 打造的作業系統級基礎設施平台。
 **不是 APP，是 OS。** 貼上 API Key，3 分鐘內擁有一個高智商、全副武裝的 AI Agent。對新手友善，對資深玩家實用，所有參數可自訂。閒置 RAM < 60MB，峰值 < 150MB，無 GPU，零風扇。
