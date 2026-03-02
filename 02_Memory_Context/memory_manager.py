@@ -10,7 +10,6 @@
 3. 動態上下文 (History Window): 使用「滑動視窗」，只保留最近 N 輪對話。
 4. 滾動摘要 (Rolling Summary): 捨棄的對話不直接刪掉，而是先壓縮成一句話，作為下一輪的「前情提要」。
 """
-import copy
 
 class ContextManager:
     def __init__(self, max_history_tokens=4000, max_messages=10):

@@ -42,7 +42,7 @@ while True:
     if not result.success:
          print(f"✅ 成功防堵 CPU 炸彈！錯誤訊息: {result.error}")
     else:
-         print(f"❌ 警告: CPU 炸彈未被防堵，仍回傳了 Success=True")
+         print("❌ 警告: CPU 炸彈未被防堵，仍回傳了 Success=True")
 
 
     # ----------------------------------------------------
@@ -66,7 +66,7 @@ except MemoryError:
     
     print(f"執行結果: Success={result.success}")
     if not result.success or "MemoryError" in result.output or "MemoryError" in str(result.error) or "Killed" in str(result.error):
-         print(f"✅ 成功防堵 RAM 炸彈！")
+         print("✅ 成功防堵 RAM 炸彈！")
          if result.error:
              print(f"錯誤訊息: {result.error}")
          if result.output:

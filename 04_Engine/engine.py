@@ -185,7 +185,7 @@ class Engine:
             # 解析回應
             choice = response.get("choices", [{}])[0]
             message = choice.get("message", {})
-            finish_reason = choice.get("finish_reason", "")
+            choice.get("finish_reason", "")
 
             # Case 1: Tool calls
             tool_calls = message.get("tool_calls", [])

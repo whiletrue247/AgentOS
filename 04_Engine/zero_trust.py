@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 
 class PermissionDeniedError(Exception):
     """當 Agent 的操作被 Zero Trust 攔截時拋出"""
-    pass
 
 class ZeroTrustInterceptor:
     """

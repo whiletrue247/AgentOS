@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Any, Optional
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)

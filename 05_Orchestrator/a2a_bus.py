@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 from task_planner import SubTask
 from sub_agents import get_role_prompt
 
@@ -68,7 +68,6 @@ class A2ABus:
         - 收集結果後更新 planner 狀態
         - 直到所有 tasks 做完
         """
-        results = {}
         
         while True:
             runnable_tasks = planner.get_next_runnable_tasks()

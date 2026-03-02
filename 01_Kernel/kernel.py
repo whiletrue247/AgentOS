@@ -36,7 +36,7 @@ class Kernel:
             with open(soul_path, "r", encoding="utf-8") as f:
                 content = f.read().strip()
                 if not content:
-                    logger.warning(f"⚠️ SOUL.md 為空。")
+                    logger.warning("⚠️ SOUL.md 為空。")
                     content = "You are a helpful AI Agent."
                 self.config.soul_content = content
                 return content

@@ -17,7 +17,6 @@ import yaml
 from pathlib import Path
 from typing import Any
 
-from config_schema import AgentOSConfig
 
 # Defaults for generating a fresh config
 DEFAULT_CONFIG_PATH = Path("config.yaml")

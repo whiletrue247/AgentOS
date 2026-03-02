@@ -1,7 +1,6 @@
 import logging
-import json
 import asyncio
-from typing import List, Dict, Any, Tuple
+from typing import Any
 
 from knowledge_graph import PersonalKnowledgeGraph
 
@@ -25,7 +24,7 @@ class GraphRAG:
         logger.info(f"📥 從對話抽取知識實體: {session_text[:30]}...")
         
         # 實戰中這裡會呼叫 Gateway 進行結構化擷取
-        prompt = f"""
+        _ = f"""
         Extract entities and relationships from the following text.
         Output format should be a JSON array of arrays: [["Subject", "Predicate", "Object"]].
         Text: {session_text}

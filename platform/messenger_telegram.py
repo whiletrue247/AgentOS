@@ -6,7 +6,6 @@ Telegram Bot 整合，作為 AgentOS 的前台介面。
 支援 streaming 更新狀態 (透過 EngineEvent)。
 """
 
-import asyncio
 import logging
 from typing import Optional
 

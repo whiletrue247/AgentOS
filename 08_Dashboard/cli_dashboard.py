@@ -2,7 +2,7 @@ import json
 import yaml
 import os
 import glob
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 def load_permissions() -> Dict[str, Any]:
     config_path = os.path.join(os.getcwd(), "config/permissions.yaml")

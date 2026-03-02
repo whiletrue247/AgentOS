@@ -6,7 +6,6 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '../05_Orchestrator'))
 
-from config_schema import load_config
 from task_planner import TaskPlanner
 from a2a_bus import A2ABus
 

@@ -14,7 +14,6 @@ AgentOS 端到端測試 (End-to-End Test)。
 import asyncio
 import os
 import sys
-from pathlib import Path
 from importlib import import_module
 
 # 把專案根目錄加回 sys.path，以便 import 各路徑模組
@@ -47,7 +46,7 @@ async def run_e2e_test():
     
     # 載入 01_Kernel
     kernel_mod = import_module("01_Kernel.kernel")
-    Kernel = kernel_mod.Kernel
+    kernel_mod.Kernel
     
     # mock soul
     soul_content = """# E2E Test Agent
@@ -108,8 +107,8 @@ Whenever you are asked to write code, just use writing tools.
     
     gateway = gateway_mod.APIGateway(config)
     rate_limiter = rate_mod.RateLimiter(rpm=60, tpm=200000) # --- 守衛 / 狀態機 ---
-    cost_guard = cost_mod.CostGuard(config, history_path=str(data_dir / "test_cost.json"))
-    state_machine = state_mod.StateMachine(checkpoint_dir=str(data_dir / "test_checkpoints"))
+    _ = cost_mod.CostGuard(config, history_path=str(data_dir / "test_cost.json"))
+    _ = state_mod.StateMachine(checkpoint_dir=str(data_dir / "test_checkpoints"))
     
     engine = engine_mod.Engine(config)
     

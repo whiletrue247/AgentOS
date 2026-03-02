@@ -1,7 +1,7 @@
 import logging
 import json
 import asyncio
-from typing import Tuple, List, Dict, Any
+from typing import Tuple, Any
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class SemanticVision:
         logger.info(f"🖼️ 分析螢幕截圖意圖: '{query}'")
         
         # 模擬 Vision Model (如 GPT-4o) 解讀行為
-        messages = [
+        _ = [
             {"role": "user", "content": [
                 {"type": "text", "text": query},
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}}
@@ -43,7 +43,7 @@ class SemanticVision:
         """
         logger.info(f"🎯 計算 '{description}' 的 Bounding Box (X,Y)")
         
-        prompt = f"""
+        _ = f"""
         Analyze this screenshot. Locate the UI element matching: '{description}'.
         Return ONLY a JSON object with 'x' and 'y' integer coordinates of the center point.
         """

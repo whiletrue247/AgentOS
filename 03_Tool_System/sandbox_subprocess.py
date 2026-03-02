@@ -21,7 +21,7 @@ try:
 except ImportError:
     resource = None  # Windows 不支援
 
-from contracts.interfaces import SandboxProvider, ToolCallResult
+from contracts.interfaces import ToolCallResult
 
 logger = logging.getLogger(__name__)
 

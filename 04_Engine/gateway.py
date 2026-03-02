@@ -12,10 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import httpx
-import json
 import logging
 import time
-from typing import Any, AsyncIterator, Optional
+from typing import Any, Optional
 
 from config_schema import AgentOSConfig, ProviderConfig
 from contracts.interfaces import APICallRecord

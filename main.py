@@ -27,7 +27,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from pathlib import Path
 
 # ============================================================
 # Logging
@@ -122,7 +121,7 @@ async def boot() -> None:
         tpm=config.engine.rate_limit.tpm,
     )
     cost_guard = cost_mod.CostGuard(config)
-    state_machine = state_mod.StateMachine()
+    state_mod.StateMachine()
 
     engine = engine_mod.Engine(config)
 

@@ -55,7 +55,7 @@ User's description of their desired Agent:
 Output ONLY the markdown content for the SOUL.md file, starting with the `# [Agent Name]`. Do not include any other conversational filler.
 """
 
-    async def generate(self, user_description: str, save_path: Optional[str] = None) -> str:
+    async def generate(self, user_description: str, save_path: str | None = None) -> str:
         """
         利用 LLM (透過 Gateway) 一鍵生成 SOUL.md。
         """
