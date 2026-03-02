@@ -10,6 +10,7 @@ onboarding/wizard.py
   4. 設定通訊方式 (Terminal / Telegram)
 """
 
+import getpass
 import os
 import sys
 import yaml
@@ -97,7 +98,7 @@ class OnboardingWizard:
 
     def setup_openai(self):
         print("\n🔗 https://platform.openai.com/api-keys")
-        api_key = input("🔑 請輸入您的 OpenAI API Key (sk-...): ").strip()
+        api_key = getpass.getpass("🔑 請輸入您的 OpenAI API Key (sk-...): ").strip()
         provider = {
             "name": "openai",
             "api_key": api_key,
@@ -108,7 +109,7 @@ class OnboardingWizard:
 
     def setup_anthropic(self):
         print("\n🔗 https://console.anthropic.com/settings/keys")
-        api_key = input("🔑 請輸入您的 Anthropic API Key (sk-ant-...): ").strip()
+        api_key = getpass.getpass("🔑 請輸入您的 Anthropic API Key (sk-ant-...): ").strip()
         provider = {
             "name": "anthropic",
             "api_key": api_key,
@@ -176,7 +177,7 @@ A general-purpose AI assistant powered by AgentOS.
                 break
             elif choice == "2":
                 print("\n🔗 請找 @BotFather 建立機器人並取得 Token")
-                token = input("🤖 請輸入 Telegram Bot Token: ").strip()
+                token = getpass.getpass("🤖 請輸入 Telegram Bot Token: ").strip()
                 self.config_data["messenger"]["telegram"]["bot_token"] = token
                 break
             else:
@@ -187,7 +188,11 @@ A general-purpose AI assistant powered by AgentOS.
         try:
             with open(self.config_path, "w", encoding="utf-8") as f:
                 yaml.dump(self.config_data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
-            print(f"✅ 設定檔已儲存至 {self.config_path}")
+            try:
+                os.chmod(self.config_path, 0o600)  # rw-------
+            except Exception as e:
+                print(f"⚠️ 無法修改設定檔權限: {e}")
+            print(f"✅ 設定檔已儲存至 {self.config_path} (權限已設為 600)")
         except Exception as e:
             print(f"❌ 儲存設定失敗: {e}")
             sys.exit(1)

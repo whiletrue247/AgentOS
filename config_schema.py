@@ -197,7 +197,20 @@ def load_config(config_path: Optional[str] = None) -> AgentOSConfig:
     with open(path, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
 
-    return _dict_to_dataclass(AgentOSConfig, raw)
+    config = _dict_to_dataclass(AgentOSConfig, raw)
+    
+    # -- 環境變數覆寫 (Environment Variable Overrides) --
+    # 這裡覆寫 Provider API Key
+    for provider in config.gateway.providers:
+        env_key = f"AGENTOS_{provider.name.upper()}_API_KEY"
+        if env_val := os.environ.get(env_key):
+            provider.api_key = env_val
+            
+    # 覆寫 Telegram Bot Token
+    if env_tg := os.environ.get("AGENTOS_TELEGRAM_BOT_TOKEN"):
+        config.messenger.telegram.bot_token = env_tg
+        
+    return config
 
 
 def save_config(config: AgentOSConfig, config_path: Optional[str] = None) -> None:
@@ -217,6 +230,11 @@ def save_config(config: AgentOSConfig, config_path: Optional[str] = None) -> Non
 
     with open(path, "w", encoding="utf-8") as f:
         yaml.dump(_to_dict(config), f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        
+    try:
+        os.chmod(path, 0o600)
+    except Exception:
+        pass
 
 
 def validate_config(config: AgentOSConfig) -> list[str]:
