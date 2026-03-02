@@ -1,0 +1,102 @@
+import json
+import logging
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
+
+class SubTask(BaseModel):
+    id: str = Field(..., description="Unique ID for the sub-task (e.g., 'task_1')")
+    description: str = Field(..., description="Detailed instruction for what needs to be done")
+    agent_role: str = Field(..., description="Role best suited for this task (e.g., 'researcher', 'coder', 'writer')")
+    depends_on: List[str] = Field(default_factory=list, description="List of task IDs that must be completed before this one")
+    status: str = Field("pending", description="Status: 'pending', 'in_progress', 'completed', 'failed'")
+    result: Optional[str] = Field(None, description="The output result once completed")
+
+class DAGPlan(BaseModel):
+    objective: str = Field(..., description="The overall objective being solved")
+    tasks: List[SubTask] = Field(default_factory=list, description="List of tasks forming the DAG")
+    
+class TaskPlanner:
+    """
+    負責將大型目標拆解成 DAG (Directed Acyclic Graph) 的子任務。
+    在實際應用中，它會呼叫 LLM (Orchestrator) 產生這些拆解步驟，
+    並負責追蹤進度與自動重排。
+    """
+    
+    def __init__(self, gateway: Any):
+        self.gateway = gateway
+        self.current_plan: Optional[DAGPlan] = None
+
+    async def generate_plan(self, objective: str) -> DAGPlan:
+        """呼叫高智商 LLM 把任務拆掉"""
+        logger.info(f"🧠 TaskPlanner: 正在拆解巨型任務 -> {objective}")
+        
+        system_prompt = """
+        You are a Master Orchestrator. The user will give you a massive objective.
+        You must break it down into a DAG (Directed Acyclic Graph) of sub-tasks.
+        Respond ONLY with a valid JSON array of tasks. Each task must have:
+        - "id": string
+        - "description": string
+        - "agent_role": string (choose from "researcher", "coder", "writer", "critic")
+        - "depends_on": array of string (IDs of tasks that must be done first)
+        """
+        
+        # 呼叫大腦 (自動透過 SmartRouter 轉到 Orchestrator)
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Objective: {objective}"}
+        ]
+        
+        # 這裡會由 router 自動配對最聰明的模型 (如 gpt-4o 或 claude-3-5)
+        response = await self.gateway.call(messages=messages, agent_id="orchestrator")
+        
+        reply_content = response["choices"][0]["message"]["content"]
+        
+        # 簡易的 JSON 解析 (實戰中需更強健的容錯機制)
+        try:
+            # 清除 markdown code block markers
+            if "```json" in reply_content:
+                reply_content = reply_content.split("```json")[1].split("```")[0].strip()
+            elif "```" in reply_content:
+                reply_content = reply_content.split("```")[1].split("```")[0].strip()
+                
+            task_list = json.loads(reply_content)
+            
+            sub_tasks = [SubTask(**t) for t in task_list]
+            self.current_plan = DAGPlan(objective=objective, tasks=sub_tasks)
+            
+            logger.info(f"✅ 任務拆解完成！共產生 {len(sub_tasks)} 個子階段。")
+            return self.current_plan
+
+        except Exception as e:
+            logger.error(f"❌ 拆解計畫解析失敗: {e}")
+            raise Exception("Failed to generate actionable plan")
+
+    def get_next_runnable_tasks(self) -> List[SubTask]:
+        """找出所有 depends_on 都已經 completed 的 pending 任務"""
+        if not self.current_plan:
+            return []
+            
+        completed_ids = {t.id for t in self.current_plan.tasks if t.status == "completed"}
+        
+        runnable = []
+        for t in self.current_plan.tasks:
+            if t.status == "pending":
+                if all(dep in completed_ids for dep in t.depends_on):
+                    runnable.append(t)
+                    
+        return runnable
+
+    def update_task_status(self, task_id: str, status: str, result: Optional[str] = None):
+        """更新任務狀態"""
+        if not self.current_plan:
+            return
+            
+        for t in self.current_plan.tasks:
+            if t.id == task_id:
+                t.status = status
+                if result:
+                    t.result = result
+                logger.debug(f"📋 Task [{task_id}] 狀態更新 -> {status}")
+                break
