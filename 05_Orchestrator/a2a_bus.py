@@ -1,105 +1,255 @@
-import logging
+"""
+05_Orchestrator — Agent-to-Agent Bus (v5.0 SOTA — LangGraph)
+==============================================================
+使用 LangGraph StateGraph 實現多 Agent 編排：
+  - TypedDict 定義圖狀態
+  - 條件邊 (Conditional Edges) 支援任務路由
+  - Human-in-the-Loop 審核節點
+  - DAG 拓撲排序執行
+
+當 langgraph 不可用時，退回 asyncio.gather() 手動 DAG。
+"""
+
+from __future__ import annotations
+
 import asyncio
-from typing import Any, Dict
-from task_planner import SubTask
-from sub_agents import get_role_prompt
+import logging
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
+# 嘗試載入 LangGraph
+try:
+    from langgraph.graph import StateGraph, START, END
+    from typing import TypedDict, Annotated
+    import operator
+    LANGGRAPH_AVAILABLE = True
+except ImportError:
+    LANGGRAPH_AVAILABLE = False
+    logger.info("ℹ️ langgraph not installed — using asyncio fallback for DAG execution")
+
+# 嘗試載入本地模組
+try:
+    from .task_planner import SubTask
+    from .sub_agents import get_role_prompt
+except ImportError:
+    from task_planner import SubTask
+    from sub_agents import get_role_prompt
+
+
+# ============================================================
+# LangGraph State Schema
+# ============================================================
+
+if LANGGRAPH_AVAILABLE:
+    class OrchestratorState(TypedDict):
+        """LangGraph 圖狀態"""
+        objective: str
+        tasks: List[dict]
+        completed: Annotated[List[str], operator.add]  # 已完成的 task IDs
+        results: Dict[str, str]
+        human_approved: bool
+        current_batch: List[str]    # 當前批次執行的 task IDs
+
+
 class A2ABus:
     """
-    Agent-to-Agent Event Bus.
-    負責將 Planner 規劃出來的 SubTask，派發給對應角色 (編譯專屬 Prompt)，
-    並透過 Engine Loop / Gateway 執行，最後回收結果給 Orchestrator 參考。
+    Agent-to-Agent Event Bus (v5.0 SOTA).
+    LangGraph 模式：使用 StateGraph 組織 Plan → Execute → Review 的圖流程。
+    Fallback 模式：使用 asyncio.gather 做直接 DAG 排程。
     """
 
     def __init__(self, engine: Any):
-        # 這裡持有 main engine 或 gateway 的引用，以便觸發真實的 inference 迴圈
         self.engine = engine
 
+    # ----------------------------------------------------------
+    # 核心：執行單個子任務
+    # ----------------------------------------------------------
     async def dispatch_task(self, task: SubTask, global_context: str = "") -> str:
-        """
-        向指定的 sub-agent 派發任務。
-        global_context: 整個專案或父任務的大致背景，避免子任務失去方向感。
-        """
-        logger.info(f"🚌 A2ABus: Dispatching Task [{task.id}] -> {task.agent_role}")
-        
+        """向指定的 sub-agent 派發任務，透過 Gateway 做真實 LLM 呼叫。"""
+        logger.info(f"🚌 A2ABus: Dispatching Task [{task.id}] → {task.agent_role}")
+
         system_prompt = get_role_prompt(task.agent_role)
-        
         if global_context:
-             system_prompt += f"\n\n[GLOBAL CONTEXT]\n{global_context}"
-             
-        # 構造給這個子 Agent 的專屬對話紀錄
+            system_prompt += f"\n\n[GLOBAL CONTEXT]\n{global_context}"
+
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Your task:\n{task.description}"}
+            {"role": "user", "content": f"Your task:\n{task.description}"},
         ]
-        
-        # 在系統架構中，如果我們有對接 04_Engine 的 `run_once` 或 `_agent_loop`，
-        # 應該直接呼叫它，讓它處理 tool calling。
-        # 這裡我們為了確保子 Agent 可以用 tools，直接呼叫 engine 內建的方法
-        # (需要確認 Engine 介命是否可以傳入自訂 messages 與 agent_id)
-        
-        # 為了架構靈活性，我們透過 engine 的 gateway 直接打，
-        # TODO: 實作完整的 "spawn_agent" API 來讓 SubAgent 也擁有自己的 Memory 實體
-        # 這裡作為 Phase 1 的第一版，直接過 Gateway (只能打單輪，不含工具迴圈)
-        
+
         try:
-            # 這裡呼叫 Gateway，且帶入 task.agent_role 作為 agent_id，
-            # 這樣 SmartRouter 就會根據 config 給它合適的模型 (例如 coder_model, writer_model)
             response = await self.engine.gateway.call(
                 messages=messages,
-                agent_id=task.agent_role
+                agent_id=task.agent_role,
             )
-            
             result = response["choices"][0]["message"]["content"]
             logger.info(f"✅ A2ABus: Task [{task.id}] completed by {task.agent_role}.")
             return result
-            
         except Exception as e:
-            logger.error(f"❌ A2ABus: Task [{task.id}] failed. Reason: {e}")
+            logger.error(f"❌ A2ABus: Task [{task.id}] failed: {e}")
             raise
 
+    # ----------------------------------------------------------
+    # LangGraph DAG Execution
+    # ----------------------------------------------------------
+    def build_graph(self, planner: Any):
+        """
+        使用 LangGraph StateGraph 建構任務流程圖。
+        流程: plan_node → [human_review] → execute_batch → check_completion → (loop or end)
+        """
+        if not LANGGRAPH_AVAILABLE:
+            raise ImportError("langgraph is required for graph-based execution")
+
+        graph = StateGraph(OrchestratorState)
+
+        # === Nodes ===
+        async def plan_node(state: OrchestratorState) -> dict:
+            """找出當前可執行的任務批次"""
+            tasks = state["tasks"]
+            completed = set(state.get("completed", []))
+            batch = []
+            for t in tasks:
+                if t["id"] not in completed and t.get("status") != "failed":
+                    deps = set(t.get("depends_on", []))
+                    if deps.issubset(completed):
+                        batch.append(t["id"])
+            logger.info(f"📋 Plan node: {len(batch)} tasks ready to run")
+            return {"current_batch": batch}
+
+        async def human_review_node(state: OrchestratorState) -> dict:
+            """人類審核節點 (目前自動通過，可擴展為 Telegram/Dashboard 確認)"""
+            batch = state.get("current_batch", [])
+            logger.info(f"👤 Human Review: {len(batch)} tasks pending approval → Auto-approved")
+            # TODO: 實作真實的 human approval (如 Telegram inline keyboard)
+            return {"human_approved": True}
+
+        async def execute_batch_node(state: OrchestratorState) -> dict:
+            """平行執行一個批次的子任務"""
+            batch_ids = state.get("current_batch", [])
+            tasks = state["tasks"]
+            results = dict(state.get("results", {}))
+
+            # 找出 SubTask 物件
+            batch_tasks = [t for t in tasks if t["id"] in batch_ids]
+
+            async def run_one(task_dict: dict) -> tuple:
+                sub = SubTask(**task_dict)
+                # 構建上下文
+                ctx = "Completed dependencies:\n"
+                for dep_id in sub.depends_on:
+                    if dep_id in results:
+                        ctx += f"- [{dep_id}]: {results[dep_id][:300]}...\n"
+                try:
+                    result = await self.dispatch_task(sub, global_context=ctx)
+                    return task_dict["id"], "completed", result
+                except Exception:
+                    return task_dict["id"], "failed", ""
+
+            coros = [run_one(t) for t in batch_tasks]
+            outcomes = await asyncio.gather(*coros)
+
+            new_completed = []
+            for tid, status, result in outcomes:
+                if status == "completed":
+                    results[tid] = result
+                    new_completed.append(tid)
+                # 更新 tasks 狀態
+                for t in tasks:
+                    if t["id"] == tid:
+                        t["status"] = status
+                        t["result"] = result
+
+            logger.info(f"✅ Execute batch: {len(new_completed)}/{len(batch_ids)} succeeded")
+            return {"results": results, "completed": new_completed, "tasks": tasks}
+
+        def should_continue(state: OrchestratorState) -> str:
+            """條件邊：判斷是否還有任務要做"""
+            tasks = state.get("tasks", [])
+            completed = set(state.get("completed", []))
+            pending = [t for t in tasks if t["id"] not in completed and t.get("status") != "failed"]
+            if pending:
+                return "continue"
+            return "done"
+
+        # === Graph Wiring ===
+        graph.add_node("plan", plan_node)
+        graph.add_node("human_review", human_review_node)
+        graph.add_node("execute", execute_batch_node)
+
+        graph.add_edge(START, "plan")
+        graph.add_edge("plan", "human_review")
+        graph.add_edge("human_review", "execute")
+        graph.add_conditional_edges("execute", should_continue, {
+            "continue": "plan",
+            "done": END,
+        })
+
+        return graph.compile()
+
+    async def run_dag_langgraph(self, planner: Any) -> Dict[str, str]:
+        """使用 LangGraph 執行完整 DAG。"""
+        graph = self.build_graph(planner)
+
+        initial_state: OrchestratorState = {
+            "objective": planner.current_plan.objective,
+            "tasks": [t.model_dump() for t in planner.current_plan.tasks],
+            "completed": [],
+            "results": {},
+            "human_approved": False,
+            "current_batch": [],
+        }
+
+        final_state = await graph.ainvoke(initial_state)
+        return final_state.get("results", {})
+
+    # ----------------------------------------------------------
+    # Asyncio Fallback (when langgraph is not installed)
+    # ----------------------------------------------------------
     async def run_dag(self, planner: Any) -> Dict[str, str]:
         """
-        自動執行任務圖 (DAG)。
-        - 找出 runnable 的任務
-        - 丟進 asyncio.gather 做平行執行
-        - 收集結果後更新 planner 狀態
-        - 直到所有 tasks 做完
+        主入口：優先使用 LangGraph，否則退回 asyncio fallback。
         """
-        
+        if LANGGRAPH_AVAILABLE:
+            logger.info("🔗 Using LangGraph StateGraph for DAG execution")
+            return await self.run_dag_langgraph(planner)
+
+        logger.info("🔄 Using asyncio fallback for DAG execution")
+        return await self._run_dag_asyncio(planner)
+
+    async def _run_dag_asyncio(self, planner: Any) -> Dict[str, str]:
+        """Fallback DAG executor (pure asyncio)."""
         while True:
-            runnable_tasks = planner.get_next_runnable_tasks()
-            
-            if not runnable_tasks:
-                # 檢查是否全部完成了
-                all_done = all(t.status in ["completed", "failed"] for t in planner.current_plan.tasks)
+            runnable = planner.get_next_runnable_tasks()
+            if not runnable:
+                all_done = all(
+                    t.status in ["completed", "failed"]
+                    for t in planner.current_plan.tasks
+                )
                 if all_done:
                     break
-                else:
-                    # 如果還有沒做完的但沒有 runnable，代表可能發生 deadlock (依賴的任務 failed 或依賴寫錯)
-                    logger.error("🚨 DAG Deadlock! Unfinished tasks exist but none are runnable.")
-                    break
-                    
-            tasks_coros = []
-            for t in runnable_tasks:
+                logger.error("🚨 DAG Deadlock! Unfinished tasks but none runnable.")
+                break
+
+            coros = []
+            for t in runnable:
                 t.status = "in_progress"
-                tasks_coros.append(self._execute_single_task(planner, t))
-                
-            await asyncio.gather(*tasks_coros)
-            
+                coros.append(self._exec_single_asyncio(planner, t))
+
+            await asyncio.gather(*coros)
+
         return {t.id: t.result for t in planner.current_plan.tasks if t.result}
 
-    async def _execute_single_task(self, planner: Any, task: SubTask):
+    async def _exec_single_asyncio(self, planner: Any, task: SubTask):
+        """Execute a single task in asyncio fallback mode."""
         try:
-            # 這裡把已經跑完的依賴結果當作 context 塞給它
-            context_str = "Completed dependencies:\n"
+            ctx = "Completed dependencies:\n"
             for dep_id in task.depends_on:
-                dep_task = next(t for t in planner.current_plan.tasks if t.id == dep_id)
-                context_str += f"- [{dep_id}] Result: {dep_task.result[:500]}...\n" # 截斷避免太長
-                
-            result = await self.dispatch_task(task, global_context=context_str)
+                dep = next((t for t in planner.current_plan.tasks if t.id == dep_id), None)
+                if dep and dep.result:
+                    ctx += f"- [{dep_id}]: {dep.result[:300]}...\n"
+
+            result = await self.dispatch_task(task, global_context=ctx)
             planner.update_task_status(task.id, "completed", result)
         except Exception:
-             planner.update_task_status(task.id, "failed")
+            planner.update_task_status(task.id, "failed")
