@@ -11,6 +11,7 @@ Agent-to-Model 路由由 config.yaml 的 gateway.agents 決定。
 from __future__ import annotations
 
 import asyncio
+import httpx
 import json
 import logging
 import time
@@ -215,11 +216,8 @@ class APIGateway:
     ) -> dict[str, Any]:
         """
         實際呼叫 API。
-        使用 urllib (同步) 包在 asyncio.to_thread 裡。
-        TODO: 未來替換為 httpx 做真正的異步。
+        使用 httpx 進行原生非同步請求。
         """
-        import urllib.request
-
         endpoint = ModelAdapter.get_endpoint(provider, model)
         headers = ModelAdapter.get_headers(provider)
         payload = ModelAdapter.build_request(
@@ -235,19 +233,19 @@ class APIGateway:
         if provider.name == "google" and provider.api_key:
             endpoint += f"?key={provider.api_key}"
 
-        body = json.dumps(payload).encode("utf-8")
-
-        def _sync_call():
-            req = urllib.request.Request(endpoint, data=body, headers=headers, method="POST")
-            try:
-                with urllib.request.urlopen(req, timeout=120) as resp:
-                    return json.loads(resp.read().decode("utf-8"))
-            except urllib.error.HTTPError as e:
-                error_body = e.read().decode("utf-8") if e.fp else ""
-                raise APIError(e.code, f"API Error: {error_body}")
-
         start = time.time()
-        result = await asyncio.to_thread(_sync_call)
+        
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            try:
+                response = await client.post(endpoint, json=payload, headers=headers)
+                response.raise_for_status()
+                result = response.json()
+            except httpx.HTTPStatusError as e:
+                error_body = e.response.text
+                raise APIError(e.response.status_code, f"API Error: {error_body}")
+            except httpx.RequestError as e:
+                raise APIError(503, f"Request failed: {e}")
+
         elapsed_ms = int((time.time() - start) * 1000)
 
         # 記錄呼叫
