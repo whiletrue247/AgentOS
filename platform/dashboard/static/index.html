@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgentOS Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Use Inter font for a modern look -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="logo">
+                <i class="fa-solid fa-microchip"></i>
+                <span>AgentOS</span>
+            </div>
+            <ul class="nav-links">
+                <li class="active" data-target="overview"><i class="fa-solid fa-chart-pie"></i> Overview</li>
+                <li data-target="tasks"><i class="fa-solid fa-list-check"></i> Tasks</li>
+                <li data-target="soul"><i class="fa-solid fa-brain"></i> SOUL Generator</li>
+                <li data-target="settings"><i class="fa-solid fa-gear"></i> Settings</li>
+            </ul>
+            <div class="system-status">
+                <div class="status-indicator"></div>
+                <span id="sys-status-text">Connecting...</span>
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Overview View -->
+            <section id="view-overview" class="view active">
+                <header>
+                    <h1>System Overview</h1>
+                    <p class="subtitle">Real-time metrics and AgentOS status.</p>
+                </header>
+                
+                <div class="dashboard-grid">
+                    <!-- Token Cost Card -->
+                    <div class="card stat-card glow">
+                        <div class="card-icon"><i class="fa-solid fa-coins"></i></div>
+                        <div class="card-info">
+                            <h3>Token Usage Today</h3>
+                            <div class="stat-value" id="stat-daily-m">0.00 M</div>
+                            <div class="stat-meta" id="stat-limit">Limit: 1.00 M | <span class="accent" id="stat-pct">100% left</span></div>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="budget-bar" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Engine State Card -->
+                    <div class="card stat-card">
+                        <div class="card-icon"><i class="fa-solid fa-server"></i></div>
+                        <div class="card-info">
+                            <h3>Engine Events</h3>
+                            <div class="stat-value" id="stat-events">0</div>
+                            <div class="stat-meta">Active tasks processing</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Event Stream Log -->
+                <div class="card mt-24">
+                    <h3><i class="fa-solid fa-bolt"></i> Live Feed</h3>
+                    <div class="terminal-box" id="live-feed">
+                        <div class="feed-entry system">[System] Waiting for SSE connection...</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tasks View -->
+            <section id="view-tasks" class="view hidden">
+                <header>
+                    <h1>Active Tasks</h1>
+                    <button class="btn primary" onclick="refreshTasks()"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+                </header>
+                <div class="card">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Description</th>
+                                <th>State</th>
+                                <th>Progress</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tasks-table-body">
+                            <tr><td colspan="4" class="text-center">No tasks available</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- SOUL Generator View -->
+            <section id="view-soul" class="view hidden">
+                <header>
+                    <h1>SOUL Generator <span class="badge">Beta</span></h1>
+                    <p class="subtitle">Craft the persona and behavior of your AgentOS.</p>
+                </header>
+                <div class="card">
+                    <div class="form-group">
+                        <label>Agent Name</label>
+                        <input type="text" placeholder="e.g., CodeBot 9000" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Core Objectives</label>
+                        <textarea rows="4" placeholder="What are the essential goals of this agent?" class="form-control"></textarea>
+                    </div>
+                    <button class="btn glow-btn">Generate SOUL.md</button>
+                </div>
+            </section>
+
+            <!-- Settings View -->
+            <section id="view-settings" class="view hidden">
+                <header>
+                    <h1>Configuration</h1>
+                </header>
+                <div class="card">
+                    <p>Settings exposed from config.yaml will appear here.</p>
+                    <div class="form-group">
+                        <label>Gateway Default Route</label>
+                        <input type="text" value="openai/gpt-4o" disabled class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Daily Budget (M Tokens)</label>
+                        <input type="number" value="1.0" disabled class="form-control">
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

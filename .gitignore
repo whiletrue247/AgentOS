@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AgentOS Runtime Data
+data/
+logs/
+*.db
+
+# Config (contains API keys)
+config.yaml
+
+# Sandbox Temp
+agentos_sandbox_*/
+test_fib.py
+script.sh
+script.py
+
+# Environment
+.env
+.env.local
