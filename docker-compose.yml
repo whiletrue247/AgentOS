@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  agentos-core:
+    build: .
+    container_name: agentos_core_daemon
+    restart: unless-stopped
+    environment:
+      # 自動帶入主機 .env，也可以在此直接宣告變數
+      - AGENTOS_HOME=/data
+    volumes:
+      # 掛載本地資料以持久化 (Memory, Logs, Souls 等)
+      - ./data:/data
+      # ⚠️ [SECURITY WARNING] 掛載 Docker Socket
+      # 這將允許此容器 (AgentOS) 控制主機上的 Docker Daemon 取代自己生出 Sandbox Sibling Containers。
+      # 請確保只在受信任的本機/開發環境使用。
+      # 若需最高安全性，請改用 Docker-in-Docker (DinD) 映像檔搭配 --privileged，而非 socket 掛載。
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8080:8080" # Dashboard Port
+    networks:
+      - agentos_net
+
+networks:
+  agentos_net:
+    driver: bridge

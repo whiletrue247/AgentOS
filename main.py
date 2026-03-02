@@ -96,7 +96,10 @@ async def boot() -> None:
 
     if has_docker:
         logger.info("🐳 檢測到 Docker，啟用強隔離 DockerSandbox")
-        sandbox_provider = docker_mod.DockerSandbox(work_dir="./data/sandbox_workspace")
+        sandbox_provider = docker_mod.DockerSandbox(
+            work_dir="./data/sandbox_workspace",
+            docker_runtime=config.sandbox.docker_runtime
+        )
     else:
         logger.warning("⚠️ 找不到 Docker，降級使用零隔離 SubprocessSandbox")
         sandbox_provider = subprocess_mod.SubprocessSandbox(work_dir="./data/sandbox_workspace")

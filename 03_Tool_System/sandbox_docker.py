@@ -22,7 +22,8 @@ class DockerSandbox(SandboxProvider):
     基於 Docker Container 的安全沙盒
     """
 
-    def __init__(self, work_dir: Optional[str] = None):
+    def __init__(self, work_dir: Optional[str] = None, docker_runtime: str = ""):
+        self.docker_runtime = docker_runtime
         if work_dir:
             self.work_dir = work_dir
             self._temp_dir = None
@@ -68,6 +69,9 @@ class DockerSandbox(SandboxProvider):
             "--memory=128m",
             "--cpus=0.5",
         ]
+        
+        if self.docker_runtime:
+            docker_cmd.insert(2, f"--runtime={self.docker_runtime}")
         
         if not network_allowed:
             docker_cmd.append("--network=none")

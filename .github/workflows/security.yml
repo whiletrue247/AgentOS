@@ -1,0 +1,50 @@
+name: Security Auto-Scan
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  python-security:
+    name: AST Code Scan (Bandit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit
+          
+      - name: Run Bandit Auto-scan
+        # 忽略測試資料夾，掃描所有原始碼找尋 eval, exec, hardcoded passwords 等嚴重漏洞
+        run: |
+          bandit -r . -x ./tests -lll
+
+  container-security:
+    name: Container Vulnerability Scan (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build local container image
+        run: |
+          docker build -t agentos:local .
+          
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'agentos:local'
+          format: 'table'
+          # 只阻擋 CRITICAL 的底層 OS 或套件漏洞
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'

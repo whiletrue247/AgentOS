@@ -102,6 +102,7 @@ class SandboxConfig:
     """沙盒設定"""
     default_network: str = "deny"  # "deny" | "allow"
     timeout_seconds: int = 60
+    docker_runtime: str = ""  # e.g., "runsc" for gVisor
     truncation: TruncationConfig = field(default_factory=TruncationConfig)
 
 
