@@ -16,6 +16,11 @@ import tempfile
 import time
 from typing import Optional
 
+try:
+    import resource
+except ImportError:
+    resource = None  # Windows 不支援
+
 from contracts.interfaces import SandboxProvider, ToolCallResult
 
 logger = logging.getLogger(__name__)
@@ -104,7 +109,24 @@ class SubprocessSandbox:
                 error=f"Unsupported language: {language}"
             )
 
-        # 4. 啟動 Process
+        # 4. 準備安全限制函數 (僅限 Unix)
+        # 限制 CPU 時間 10 秒，記憶體 256MB
+        def preexec_fn():
+            if resource is not None:
+                try:
+                    # 限制 CPU 運算時間 (避免 while True 死迴圈)
+                    # 單位: 秒
+                    resource.setrlimit(resource.RLIMIT_CPU, (10, 10))
+                    
+                    # 限制記憶體分配 (避免大量 alloc 導致主機 OOM)
+                    # 單位: bytes, 這裡設為 256MB
+                    max_mem_bytes = 256 * 1024 * 1024
+                    resource.setrlimit(resource.RLIMIT_AS, (max_mem_bytes, max_mem_bytes))
+                except Exception:
+                    pass
+            os.setpgrp()
+
+        # 5. 啟動 Process
         try:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -112,6 +134,7 @@ class SubprocessSandbox:
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self.work_dir,
                 env=env,
+                preexec_fn=preexec_fn if resource else None,
             )
             
             # 使用 asyncio.wait_for 加入 Timeout 控制
