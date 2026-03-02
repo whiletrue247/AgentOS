@@ -10,6 +10,8 @@
 3. system_package: 將 pip 套件加入到 Sandbox 的 requirements 中
 """
 
+import ast
+import hashlib
 import json
 import logging
 import urllib.request
@@ -42,7 +44,7 @@ class ToolInstaller:
         self.plugins_dir.mkdir(parents=True, exist_ok=True)
         self.req_file = self.tools_dir / "sandbox_requirements.txt"
 
-    def install(self, tool_name: str, install_type: str, source_url: str) -> bool:
+    def install(self, tool_name: str, install_type: str, source_url: str, expected_hash: Optional[str] = None) -> bool:
         """
         安裝新工具的主入口
         """
@@ -50,9 +52,9 @@ class ToolInstaller:
         
         try:
             if install_type == "schema_only":
-                return self._install_schema_only(tool_name, source_url)
+                return self._install_schema_only(tool_name, source_url, expected_hash)
             elif install_type == "local_plugin":
-                return self._install_local_plugin(tool_name, source_url)
+                return self._install_local_plugin(tool_name, source_url, expected_hash)
             elif install_type == "system_package":
                 return self._install_system_package(tool_name, source_url)
             else:
@@ -62,18 +64,40 @@ class ToolInstaller:
             logger.error(f"❌ 安裝工具 {tool_name} 失敗: {e}")
             return False
 
-    def _install_schema_only(self, tool_name: str, source_url: str) -> bool:
+    def _enforce_https(self, url: str) -> bool:
+        if url.startswith("http://") and "127.0.0.1" not in url and "localhost" not in url:
+            logger.error(f"🔒 安全阻擋: 拒絕從非加密的 HTTP 下載 ({url})")
+            return False
+        return True
+
+    def _verify_hash(self, content: bytes, expected_hash: Optional[str]) -> bool:
+        if not expected_hash:
+            return True
+        computed = hashlib.sha256(content).hexdigest()
+        if computed != expected_hash:
+            logger.error(f"🔒 安全阻擋: Checksum 驗證失敗 (Expected: {expected_hash}, Got: {computed})")
+            return False
+        return True
+
+    def _install_schema_only(self, tool_name: str, source_url: str, expected_hash: Optional[str]) -> bool:
         """
         下載 JSON Schema 並註冊。
-        source_url 必須回傳一個 JSON 物件，包含 description, parameters 等。
         """
         if source_url.startswith("http"):
+            if not self._enforce_https(source_url):
+                return False
             req = urllib.request.Request(source_url, headers={'User-Agent': 'AgentOS'})
             with urllib.request.urlopen(req) as response:
-                data = json.loads(response.read().decode('utf-8'))
+                raw_bytes = response.read()
+                if not self._verify_hash(raw_bytes, expected_hash):
+                    return False
+                data = json.loads(raw_bytes.decode('utf-8'))
         else:
-            with open(source_url, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            with open(source_url, "rb") as f:
+                raw_bytes = f.read()
+                if not self._verify_hash(raw_bytes, expected_hash):
+                    return False
+                data = json.loads(raw_bytes.decode('utf-8'))
                 
         schema = ToolSchema(
             name=tool_name,
@@ -86,45 +110,65 @@ class ToolInstaller:
         self.catalog.register_tool(schema)
         return True
 
-    def _install_local_plugin(self, tool_name: str, source_url: str) -> bool:
+    def _install_local_plugin(self, tool_name: str, source_url: str, expected_hash: Optional[str]) -> bool:
         """
         下載 Python 腳本到 tools/plugins 目錄。
-        腳本內應包含 `TOOL_SCHEMA` 字典。
+        使用 ast 靜態分析提取 TOOL_SCHEMA，防範 RCE。
         """
         target_path = self.plugins_dir / f"{tool_name}.py"
+        raw_bytes = b""
         
         if source_url.startswith("http"):
+            if not self._enforce_https(source_url):
+                return False
             req = urllib.request.Request(source_url, headers={'User-Agent': 'AgentOS'})
             with urllib.request.urlopen(req) as response:
-                with open(target_path, "wb") as f:
-                    f.write(response.read())
+                raw_bytes = response.read()
         else:
-            import shutil
-            shutil.copy(source_url, target_path)
-            
-        # 動態載入腳本並提取 TOOL_SCHEMA
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(tool_name, target_path)
-        if spec and spec.loader:
-            module = importlib.util.module_from_spec(spec)
-            try:
-                spec.loader.exec_module(module)
-                schema_dict = getattr(module, 'TOOL_SCHEMA', {})
+            with open(source_url, "rb") as f:
+                raw_bytes = f.read()
                 
-                schema = ToolSchema(
-                    name=tool_name,
-                    description=schema_dict.get("description", f"Local plugin: {tool_name}"),
-                    parameters=schema_dict.get("parameters", {"type": "object", "properties": {}}),
-                    install_type="local_plugin",
-                    requires_network=schema_dict.get("requires_network", False)
-                )
-                self.catalog.register_tool(schema)
-                return True
-            except Exception as e:
-                logger.error(f"⚠️ 無法載入本地外掛 {tool_name}，可能語法錯誤: {e}")
+        if not self._verify_hash(raw_bytes, expected_hash):
+            return False
+            
+        with open(target_path, "wb") as f:
+            f.write(raw_bytes)
+            
+        # 安全靜態解析 (AST Parsing) 避免 `exec_module` 導致的 RCE
+        source_code = raw_bytes.decode('utf-8')
+        try:
+            tree = ast.parse(source_code)
+            schema_dict = None
+            
+            # 尋找模組層級的變數賦值
+            for node in tree.body:
+                if isinstance(node, ast.Assign):
+                    for target in node.targets:
+                        if isinstance(target, ast.Name) and target.id == "TOOL_SCHEMA":
+                            # 取出賦值內容並強制安全轉型為 dict
+                            schema_dict = ast.literal_eval(node.value)
+                            break
+                if schema_dict is not None:
+                    break
+                    
+            if schema_dict is None:
+                logger.error(f"⚠️ 在 {tool_name} 中找不到 TOOL_SCHEMA 變數定義")
                 return False
                 
-        return False
+        except Exception as e:
+            logger.error(f"⚠️ 解析 {tool_name} 的 Schema 失敗，格式可能不合法: {e}")
+            return False
+                
+        schema = ToolSchema(
+            name=tool_name,
+            description=schema_dict.get("description", f"Local plugin: {tool_name}"),
+            parameters=schema_dict.get("parameters", {"type": "object", "properties": {}}),
+            install_type="local_plugin",
+            requires_network=schema_dict.get("requires_network", False)
+        )
+        self.catalog.register_tool(schema)
+        return True
+
 
     def _install_system_package(self, tool_name: str, source_url: str) -> bool:
         """

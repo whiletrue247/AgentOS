@@ -34,6 +34,8 @@ class SubprocessSandbox:
             self._temp_dir = tempfile.TemporaryDirectory(prefix="agentos_sandbox_")
             self.work_dir = self._temp_dir.name
             
+        self._last_req_mtime = 0.0
+            
         logger.warning(
             "⚠️ [SECURITY WARNING] "
             "Using SubprocessSandbox! This provides ZERO true isolation. "
@@ -68,8 +70,26 @@ class SubprocessSandbox:
             env["http_proxy"] = "http://127.0.0.1:1"
             env["https_proxy"] = "http://127.0.0.1:1"
             env["NO_PROXY"] = "localhost,127.0.0.1"
+            
+        # 3. 如果是 Python，檢查是否有 requirements 需要安裝
+        if language == "python":
+            req_file = os.path.join(self.work_dir, "sandbox_requirements.txt")
+            if os.path.exists(req_file) and os.path.getsize(req_file) > 0:
+                current_mtime = os.path.getmtime(req_file)
+                if current_mtime > self._last_req_mtime:
+                    try:
+                        logger.info("📦 正在為 SubprocessSandbox 安裝 dependencies...")
+                        await asyncio.create_subprocess_exec(
+                            sys.executable, "-m", "pip", "install", "-r", req_file,
+                            stdout=asyncio.subprocess.DEVNULL,
+                            stderr=asyncio.subprocess.DEVNULL,
+                            cwd=self.work_dir
+                        )
+                        self._last_req_mtime = current_mtime
+                    except Exception as e:
+                        logger.error(f"⚠️ 安裝 sandbox 套件失敗: {e}")
 
-        # 3. 決定執行指令
+        # 4. 決定執行指令
         if language == "python":
             cmd = [sys.executable, script_path]
         elif language == "bash":

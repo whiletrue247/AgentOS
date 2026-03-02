@@ -72,9 +72,18 @@ class DockerSandbox(SandboxProvider):
         if not network_allowed:
             docker_cmd.append("--network=none")
             
-        # 3. 根據語言決定映像檔與執行指令
+        
+        # 3. 準備容器內指令
+        # 如果有 sandbox_requirements.txt，就先安裝再執行
+        req_file_host = os.path.join(self.work_dir, "sandbox_requirements.txt")
+        pip_cmd = ""
+        if os.path.exists(req_file_host) and os.path.getsize(req_file_host) > 0:
+            pip_cmd = "pip install -r sandbox_requirements.txt > /dev/null 2>&1 && "
+            
+        # 4. 根據語言決定映像檔與執行指令
         if language == "python":
-            docker_cmd.extend(["python:3.12-alpine", "python", script_name])
+            cmd = f"{pip_cmd}python {script_name}"
+            docker_cmd.extend(["python:3.12-alpine", "sh", "-c", cmd])
         elif language == "bash":
             docker_cmd.extend(["alpine", "sh", script_name])
         elif language == "javascript":
