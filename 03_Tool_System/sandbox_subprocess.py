@@ -55,10 +55,28 @@ class SubprocessSandbox:
         language: str = "python",
         timeout_seconds: int = 60,
         network_allowed: bool = False,
+        agent_role: str = "default",
     ) -> ToolCallResult:
         """
-        執行腳本。
+        執行腳本。(含 Zero Trust 攔截)
         """
+        import importlib.util
+        zt_path = os.path.join(os.path.dirname(__file__), "..", "04_Engine", "zero_trust.py")
+        if os.path.exists(zt_path):
+            spec = importlib.util.spec_from_file_location("zero_trust", zt_path)
+            if spec and spec.loader:
+                zero_trust_mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(zero_trust_mod)
+                interceptor = zero_trust_mod.get_interceptor()
+                is_allowed, reason = interceptor.verify_action(role=agent_role, action_type="shell", payload=code)
+                if not is_allowed:
+                    logger.warning(f"🛡️ [SubprocessSandbox] 執行被 Zero Trust 攔截: {reason}")
+                    return ToolCallResult(
+                        tool_name=f"{language}_exec",
+                        success=False,
+                        output="",
+                        error=reason
+                    )
         start_time = time.time()
         
         # 1. 寫入腳本檔案

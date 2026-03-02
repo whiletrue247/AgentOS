@@ -1,0 +1,45 @@
+# AgentOS Fine-Grained Permission System
+
+version: "1.0"
+
+roles:
+  orchestrator:
+    can_execute_shell: true
+    can_manage_files: true
+    can_access_network: true
+    can_access_bank: false
+    requires_human_approval:
+      - destructive_commands
+      - system_settings
+
+  coder:
+    can_execute_shell: true
+    can_manage_files: true
+    can_access_network: false
+    can_access_bank: false
+    requires_human_approval:
+      - destructive_commands
+
+  researcher:
+    can_execute_shell: false
+    can_manage_files: false
+    can_access_network: true
+    can_access_bank: false
+
+  # 未知或是未經驗證的 Agent (預設套用)
+  default:
+    can_execute_shell: false
+    can_manage_files: false
+    can_access_network: false
+    can_access_bank: false
+
+policies:
+  # 嚴格禁制清單 (正規表示式)
+  destructive_commands_regex:
+    - "rm\\s+-rf\\s+/(?!home/sandbox|tmp/)" # 禁止刪除根目錄 (但允許白名單如 /tmp)
+    - "rm\\s+-rf\\s+~"
+    - "mkfs"
+    - "dd if=.* of=/dev/"
+    - ">\\s*/etc/"
+    - "shutdown"
+    - "reboot"
