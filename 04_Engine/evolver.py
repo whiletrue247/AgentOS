@@ -66,6 +66,7 @@ class SoulEvolver:
         self,
         soul_path: str = "SOUL.md",
         memory_manager: Any = None,
+        lora_tuner: Any = None,
         importance_threshold: float = 0.8,
         min_access_count: int = 5,
         auto_graduate: bool = False,
@@ -73,6 +74,7 @@ class SoulEvolver:
     ):
         self.soul_path = Path(soul_path)
         self._memory = memory_manager
+        self._lora_tuner = lora_tuner  # LoRATunerSchedule 實例
         self.importance_threshold = importance_threshold
         self.min_access_count = min_access_count
         self.auto_graduate = auto_graduate
@@ -84,7 +86,8 @@ class SoulEvolver:
 
         logger.info(
             f"🎓 SoulEvolver 初始化: threshold={importance_threshold}, "
-            f"min_access={min_access_count}, auto={auto_graduate}"
+            f"min_access={min_access_count}, auto={auto_graduate}, "
+            f"lora={'connected' if lora_tuner else 'none'}"
         )
 
     # ========================================
@@ -292,7 +295,7 @@ class SoulEvolver:
 
     async def run_cycle(self) -> int:
         """
-        執行一次完整的進化週期：掃描 → 預覽 → 畢業。
+        執行一次完整的進化週期：掃描 → 預覽 → 畢業 → LoRA 微調。
         
         Returns:
             本次畢業的記憶數量
@@ -313,6 +316,18 @@ class SoulEvolver:
 
         # 3. 執行畢業
         count = self.graduate(candidates)
+
+        # 4. 觸發 LoRA 微調（閉環）
+        if count > 0 and self._lora_tuner:
+            try:
+                logger.info(
+                    f"🧬 畢業完成 ({count} 條) → 觸發 LoRA 微調更新本地模型..."
+                )
+                await self._lora_tuner.trigger_tuning_job()
+                logger.info("✅ LoRA 微調已觸發，Self-Improvement 閉環完成")
+            except Exception as e:
+                logger.error(f"⚠️ LoRA 微調觸發失敗 (畢業仍有效): {e}")
+
         return count
 
     # ========================================

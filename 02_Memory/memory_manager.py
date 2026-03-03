@@ -182,3 +182,65 @@ class MemoryManager:
             return ""
 
         return "--- Agent Memory Context ---\n" + "\n".join(lines) + "\n--- End Memory Context ---"
+
+    # ========================================
+    # 自動遺忘 (Time-based Decay)
+    # ========================================
+
+    async def run_decay_cycle(
+        self,
+        half_life_days: float = 7.0,
+        min_importance: float = 0.05,
+        max_scan: int = 100,
+    ) -> int:
+        """
+        執行記憶衰減週期（自動遺忘）。
+        
+        公式與 KG apply_decay() 一致：
+          new_importance = importance * 0.5^(days_since_created / half_life_days)
+        importance 低於 min_importance 的記憶會被刪除。
+        
+        Args:
+            half_life_days: 半衰期（天）
+            min_importance: 最低重要性門檻
+            max_scan: 每次最多掃描幾條記憶
+            
+        Returns:
+            被遺忘（刪除）的記憶數量
+        """
+        import math
+
+        now = datetime.now()
+        forgotten = 0
+
+        try:
+            # 掃描低重要性記憶
+            candidates = await self._provider.search(
+                query="*",
+                top_k=max_scan,
+                min_importance=0.0,
+            )
+
+            for mem in candidates:
+                days_age = (now - mem.t_created).total_seconds() / 86400.0
+                if days_age <= 0:
+                    continue
+
+                # 計算衰減後的重要性
+                decayed = mem.importance * math.pow(0.5, days_age / half_life_days)
+
+                if decayed < min_importance:
+                    await self._provider.delete(mem.memory_id)
+                    forgotten += 1
+                    logger.debug(
+                        f"🗑️ 記憶衰減遺忘: {mem.content[:30]}... "
+                        f"(importance {mem.importance:.2f} → {decayed:.4f})"
+                    )
+
+        except Exception as e:
+            logger.error(f"❌ 記憶衰減週期失敗: {e}")
+
+        if forgotten > 0:
+            logger.info(f"🧹 記憶衰減週期完成: 遺忘 {forgotten} 條記憶")
+
+        return forgotten
