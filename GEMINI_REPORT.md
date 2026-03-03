@@ -29,3 +29,15 @@
   - 使用 `cryptography.fernet` 提供對稱加密
   - Config 自動解析 `ENC[...]` 格式
   - Onboarding精靈支援互動式擷取 Master Password
+
+### Task A-4: 完整的 Audit Trail Logger
+- **Commit**: `1c01b6d` 📝 feat(audit): SQLite-backed audit trail with full action logging
+- **改動**:
+  - 新增 `04_Engine/audit_trail.py` (198 行)
+  - 修改 `04_Engine/zero_trust.py` (15 行)
+  - 修改 `03_Tool_System/sandbox_subprocess.py` (25 行)
+- **實作細節**:
+  - 基於 SQLite 的全域稽核紀錄
+  - 紀錄每筆操作 payload hash、risk_level、agent_id 以及 timestamp
+  - 提供 `export_report()` 產生 Markdown 報表
+  - 整合至 ZeroTrust (阻擋即紀錄) 及 Subprocess Sandbox (執行完紀錄)
