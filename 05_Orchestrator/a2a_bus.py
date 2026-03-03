@@ -36,6 +36,15 @@ except ImportError:
     from task_planner import SubTask
     from sub_agents import get_role_prompt
 
+# 嘗試載入 CrewAI 角色擴展
+try:
+    from .crewai_roles import CREWAI_AVAILABLE, run_crewai_dag
+except ImportError:
+    try:
+        from crewai_roles import CREWAI_AVAILABLE, run_crewai_dag
+    except ImportError:
+        CREWAI_AVAILABLE = False
+
 
 # ============================================================
 # LangGraph State Schema
@@ -206,10 +215,14 @@ class A2ABus:
     # ----------------------------------------------------------
     # Asyncio Fallback (when langgraph is not installed)
     # ----------------------------------------------------------
-    async def run_dag(self, planner: Any) -> Dict[str, str]:
+    async def run_dag(self, planner: Any, use_crewai: bool = False) -> Dict[str, str]:
         """
-        主入口：優先使用 LangGraph，否則退回 asyncio fallback。
+        主入口：優先使用 LangGraph，可選 CrewAI 流程，否則退回 asyncio fallback。
         """
+        if use_crewai and CREWAI_AVAILABLE:
+            logger.info("👥 Using CrewAI for DAG execution")
+            return await run_crewai_dag(planner, self.engine)
+
         if LANGGRAPH_AVAILABLE:
             logger.info("🔗 Using LangGraph StateGraph for DAG execution")
             return await self.run_dag_langgraph(planner)
