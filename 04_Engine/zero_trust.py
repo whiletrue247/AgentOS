@@ -56,11 +56,29 @@ class ZeroTrustInterceptor:
                     
                     self._log_audit(role, action_type, payload, "blocked", "critical", f"Regex match: {regex.pattern}")
                     
-                    # 假裝這裡有 Telegram 通知 (即時通知)
-                    self._notify_human_supervisor(role, payload)
+                    # 取出使用者決策
+                    decision = self._notify_human_supervisor(role, payload)
                     
-                    # 啟動軟回滾訊號
-                    return False, "Execution Denied by Human Supervisor. Destructive action not allowed. Soft-Rollback triggered."
+                    if decision == 'execute':
+                        logger.warning("🧑‍⚖️ Human override: Allowing destructive command execution.")
+                        self._log_audit(role, action_type, payload, "human_override", "critical", "Explicitly allowed by human")
+                        return True, "Passed via Human Override"
+                    
+                    elif decision == 'modify':
+                        print("請輸入修改後的新指令 (如果為空則視同取消):")
+                        try:
+                            # 由於 input() 攔截，若無 tty 已經會在 notify 擋下來了
+                            new_payload = input("New Command > ").strip()
+                            if new_payload:
+                                logger.info(f"🧑‍⚖️ Human override: Modifying payload to: {new_payload}")
+                                self._log_audit(role, action_type, f"Modified from: {payload} TO: {new_payload}", "human_modified", "high", "Payload modified by human")
+                                # 通知 caller 使用新 payload
+                                return True, f"MODIFIED:{new_payload}"
+                        except (EOFError, KeyboardInterrupt):
+                            pass
+                            
+                    # 取消或修改為空
+                    return False, "Execution Denied by Human Supervisor. Soft-Rollback triggered."
             
         return True, "Passed"
 
@@ -77,9 +95,40 @@ class ZeroTrustInterceptor:
         except ImportError:
             pass
 
-    def _notify_human_supervisor(self, role: str, payload: str):
-        """假想的外部通知服務 (Telegram / Dashboard)"""
-        logger.info(f"🔔 [通知] 傳送警告至主管 Dashboard: Agent ({role}) 試圖執行 {payload}")
+    def _notify_human_supervisor(self, role: str, payload: str) -> str:
+        """
+        通知主管並要求決策 (Human-in-the-Loop)。
+        實戰中這裡可能串接 Telegram Bot 或 WebSocket UI。
+        回傳: 'execute', 'modify', 或 'cancel'
+        """
+        logger.info(f"🔔 [通知] 傳送警告至主管 Dashboard: Agent ({role}) 試圖執行高危操作")
+        print("\n\033[93m" + "="*60)
+        print("🚨 [Zero Trust Alert] 偵測到高危操作！")
+        print(f"Agent Role : {role}")
+        print(f"Payload    :\n{payload}")
+        print("="*60 + "\033[0m")
+        
+        # 為了能在 CI/測試中自動通過，若無 TTY 直接阻擋
+        import sys
+        if not sys.stdin.isatty():
+            logger.warning("No TTY available. Auto-canceling dangerous operation.")
+            return 'cancel'
+            
+        print("請選擇你要進行的操作:")
+        print("  [e] 執行 (Execute)")
+        print("  [m] 修改指令 (Modify)")
+        print("  [c] 取消/回滾 (Cancel)")
+        
+        while True:
+            choice = input("您的選擇 [e/m/c]? ").strip().lower()
+            if choice == 'e':
+                return 'execute'
+            elif choice == 'm':
+                return 'modify'
+            elif choice == 'c':
+                return 'cancel'
+            else:
+                print("無效的選擇，請輸入 e, m, 或 c。")
 
 # 單例模式供全域調用
 _interceptor_instance = None

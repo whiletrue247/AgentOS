@@ -109,6 +109,9 @@ class SubprocessSandbox:
                     tool_name=f"{language}_exec", success=False, output="",
                     error=reason,
                 )
+            if reason.startswith("MODIFIED:"):
+                code = reason.split("MODIFIED:", 1)[1]
+                logger.warning(f"🧑‍⚖️ Zero Trust Interceptor applied human-modified payload: {code}")
 
         # ========== Layer 3: Write Script ==========
         ext_map = {"python": ".py", "bash": ".sh", "javascript": ".js"}
