@@ -1,16 +1,29 @@
-version: "3.8"
+# ==============================================
+# AgentOS — Docker Compose (Hardened Production)
+# ==============================================
+# 包含：
+#   agentos   — 主服務 (tini + non-root)
+#   neo4j     — Knowledge Graph
+#   sandbox   — 隔離沙盒 (gVisor/Firecracker ready)
+#   chroma    — 向量記憶資料庫 (Phase 2)
+# ==============================================
 
 services:
+  # ---- 主服務 ----
   agentos:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: agentos-core
+    restart: unless-stopped
     environment:
       - NEO4J_URI=bolt://neo4j:7687
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8001
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./config/permissions.yaml:/app/config/permissions.yaml:ro
+      - ./SOUL.md:/app/SOUL.md:rw
       - agentos-data:/app/data
       - agentos-logs:/app/logs
     networks:
@@ -18,15 +31,29 @@ services:
     depends_on:
       neo4j:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,noexec,nosuid
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"
+        reservations:
+          memory: 512M
 
+  # ---- Knowledge Graph ----
   neo4j:
     image: neo4j:5-community
     container_name: agentos-neo4j
+    restart: unless-stopped
     environment:
-      - NEO4J_AUTH=none # Local dev only, set password in prod
+      - NEO4J_AUTH=none # ⚠️ Local dev only — set password in production
     ports:
       - "7474:7474" # HTTP Browser
-      - "7687:7687" # Bolt integration
+      - "7687:7687" # Bolt
     volumes:
       - neo4j-data:/data
     networks:
@@ -36,27 +63,65 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
-  # Optional: Hardened Sandbox using gVisor (runsc)
-  # Requires host system to have runsc installed and configured in Docker daemon
+  # ---- 向量記憶資料庫 (Phase 2) ----
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: agentos-chroma
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    networks:
+      - internal-net
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ---- Hardened Sandbox (gVisor/Firecracker ready) ----
   sandbox:
     image: python:3.12-slim
     container_name: agentos-sandbox
-    # runtime: runsc  # Uncomment if gVisor is setup on host
-    command: tail -f /dev/null
+    # runtime: runsc              # ← Uncomment for gVisor
+    # runtime: kata-runtime       # ← Uncomment for Kata Containers
+    command: tail -f /dev/null # Idle — Agent 會動態 docker exec
     networks:
       - sandbox-net
-    # No volumes mounted to host for security
-    # No access to internal-net (Neo4j/AgentOS) for security
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    pids_limit: 64
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+    # 不掛載主機 volume — 完全隔離
+    # 不連接 internal-net — 無法存取 Neo4j/AgentOS
 
 networks:
   internal-net:
     driver: bridge
   sandbox-net:
     driver: bridge
-    internal: true # No internet access by default
+    internal: true # 預設無網際網路
 
 volumes:
   agentos-data:
   agentos-logs:
   neo4j-data:
+  chroma-data:

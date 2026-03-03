@@ -1,47 +1,52 @@
-# Python
-__pycache__/
-*.py[cod]
+# ==============================================
+# AgentOS — Docker Ignore
+# ==============================================
+
+# Version control
+.git
+.github
+.gitignore
+
+# Python artifacts
+__pycache__
+*.pyc
 *.pyo
-*.egg-info/
+*.egg-info
 dist/
 build/
 *.egg
 
-# Environment
+# Development
+.venv
 .env
 .env.*
-*.env
-venv/
-.venv/
+*.db
+data/
+logs/
+
+# Testing
+tests/
+.pytest_cache
+.coverage
+coverage.xml
+htmlcov/
 
 # IDE
-.vscode/
-.idea/
+.vscode
+.idea
 *.swp
 *.swo
 
-# OS
+# Documentation (keep README for pyproject)
+CONTRIBUTING.md
+CHANGELOG.md
+ROADMAP_DEFERRED.md
+LICENSE
+
+# OS files
 .DS_Store
 Thumbs.db
 
-# Data (user-specific, never ship)
-data/
-logs/
-*.db
-*.sqlite3
-
-# Config secrets
-config.yaml
-config/permissions.yaml
-
-# Test artifacts
-.pytest_cache/
-htmlcov/
-.coverage
-test_fib.py
-
-# Docker build cache
-.git
-.github
-*.md
-!README.md
+# Artifacts
+*.bak
+*.tmp

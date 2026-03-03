@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentos"
-version = "5.0.0-alpha"
+version = "5.1.0"
 description = "AI Agent 作業系統級基礎設施平台 — 不是 APP，是 OS"
 readme = "README.md"
 license = {text = "MIT"}
@@ -20,6 +20,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
@@ -43,6 +44,11 @@ knowledge = [
     "neo4j>=5.20",
     "mem0ai>=0.1",
 ]
+# Phase 2: 向量記憶
+vector = [
+    "chromadb>=0.5",
+    "sentence-transformers>=3.0",
+]
 computer-use = [
     "playwright>=1.45",
     "pyautogui>=0.9",
@@ -56,15 +62,26 @@ training = [
 telegram = [
     "python-telegram-bot>=21.0",
 ]
+# Phase 5: E2B Cloud Sandbox
+e2b = [
+    "e2b-code-interpreter>=1.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=1.0",
+    "pytest-cov>=5.0",
     "pyflakes>=3.0",
     "autoflake>=2.0",
-    "bandit>=1.7",
+    "bandit[toml]>=1.7",
+    "mypy>=1.10",
+    "ruff>=0.5",
+]
+security = [
+    "bandit[toml]>=1.7",
+    "safety>=3.0",
 ]
 all = [
-    "agentos[llm,orchestration,knowledge,computer-use,telegram,dev]",
+    "agentos[llm,orchestration,knowledge,vector,computer-use,telegram,e2b,dev,security]",
 ]
 
 [project.scripts]
@@ -73,19 +90,43 @@ agentos = "main:main"
 [project.urls]
 Homepage = "https://github.com/whiletrue247/AgentOS"
 Repository = "https://github.com/whiletrue247/AgentOS"
+Issues = "https://github.com/whiletrue247/AgentOS/issues"
+
+# ============================================================
+# Tool Configuration
+# ============================================================
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
 testpaths = ["tests"]
-
-[tool.pyflakes]
-exclude = ["__pycache__", ".pytest_cache"]
+addopts = "--tb=short -q"
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
 check_untyped_defs = true
 ignore_missing_imports = true
 exclude = ["__pycache__", ".pytest_cache", "tests"]
+
+[tool.bandit]
+exclude_dirs = ["tests", "__pycache__"]
+skips = ["B101"]  # assert 在測試中是正常的
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+exclude = ["__pycache__", ".pytest_cache"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B"]
+ignore = ["E501"]  # line too long — 交給 line-length 控制
+
+[tool.coverage.run]
+source = ["01_Kernel", "02_Memory", "03_Tool_System", "04_Engine", "05_Orchestrator", "06_Embodiment", "07_PKG"]
+omit = ["*/tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 30
