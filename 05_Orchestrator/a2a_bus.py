@@ -1,12 +1,16 @@
 """
-05_Orchestrator — Agent-to-Agent Bus (v5.0 SOTA — LangGraph + Swarm)
+05_Orchestrator — Agent-to-Agent Bus (v5.1 — LangGraph + Swarm + ACK)
 =====================================================================
 使用 LangGraph StateGraph 實現多 Agent 編排：
   - TypedDict 定義圖狀態
   - 條件邊 (Conditional Edges) 支援任務路由
   - Human-in-the-Loop 審核節點
   - DAG 拓撲排序執行
-  - Hierarchical Swarm 支援 (從單層 DAG 過度到多層 Agent 階層)
+  - Hierarchical Swarm 支援
+
+v5.1 新增 (Sprint 4)：
+  - 訊息可靠性：message_id + ACK/NACK + 指數退避重試
+  - at-least-once 語義保證
 
 當 langgraph 不可用時，退回 asyncio.gather() 手動 DAG。
 """
@@ -16,7 +20,10 @@ from __future__ import annotations
 import asyncio
 import enum
 import logging
-from typing import Any, Dict, List
+import time
+import uuid
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -77,23 +84,107 @@ if LANGGRAPH_AVAILABLE:
         current_batch: List[str]    # 當前批次執行的 task IDs
 
 
+# ============================================================
+# ACK 機制 (Sprint 4 新增)
+# ============================================================
+
+@dataclass
+class MessageReceipt:
+    """訊息回執 (ACK/NACK)"""
+    message_id: str
+    task_id: str
+    status: str  # "ack" | "nack" | "timeout"
+    result: str = ""
+    error: str = ""
+    attempts: int = 1
+    latency_ms: float = 0.0
+
+# 重試配置
+MAX_DISPATCH_RETRIES = 3
+BASE_RETRY_DELAY_S = 1.0
+
+
 class A2ABus:
     """
-    Agent-to-Agent Event Bus (v5.0 SOTA + Swarm).
+    Agent-to-Agent Event Bus (v5.1 + ACK + Swarm).
     LangGraph 模式：使用 StateGraph 組織 Plan → Execute → Review 的圖流程。
     Hierarchical 模式：複雜子任務可遞迴委派給子 Swarm。
     Fallback 模式：使用 asyncio.gather 做直接 DAG 排程。
+
+    v5.1: 支援 ACK/NACK 訊息回執 + 指數退避重試。
     """
 
     def __init__(self, engine: Any, depth: int = 0):
         self.engine = engine
         self._depth = depth  # 當前 Swarm 深度
+        self._receipts: Dict[str, MessageReceipt] = {}  # message_id → receipt
         if depth > 0:
             logger.info(f"🔄 A2ABus 子 Swarm 延伸 (depth={depth}/{MAX_SWARM_DEPTH})")
 
     # ----------------------------------------------------------
     # 核心：執行單個子任務
     # ----------------------------------------------------------
+    async def dispatch_task_with_ack(
+        self, task: SubTask, global_context: str = ""
+    ) -> MessageReceipt:
+        """
+        帶 ACK 的任務派發（Sprint 4）。
+        指數退避重試，保證 at-least-once 語義。
+        """
+        message_id = f"msg_{uuid.uuid4().hex[:12]}"
+        receipt = MessageReceipt(
+            message_id=message_id,
+            task_id=task.id,
+            status="pending",
+        )
+
+        for attempt in range(1, MAX_DISPATCH_RETRIES + 1):
+            t0 = time.monotonic()
+            try:
+                result = await self.dispatch_task(task, global_context)
+                latency = (time.monotonic() - t0) * 1000
+                receipt.status = "ack"
+                receipt.result = result
+                receipt.attempts = attempt
+                receipt.latency_ms = latency
+                self._receipts[message_id] = receipt
+                logger.info(
+                    f"✅ ACK [{message_id}] task={task.id} "
+                    f"(attempt={attempt}, latency={latency:.0f}ms)"
+                )
+                return receipt
+            except Exception as e:
+                latency = (time.monotonic() - t0) * 1000
+                if attempt < MAX_DISPATCH_RETRIES:
+                    delay = BASE_RETRY_DELAY_S * (2 ** (attempt - 1))
+                    logger.warning(
+                        f"⚠️ NACK [{message_id}] task={task.id} "
+                        f"(attempt={attempt}/{MAX_DISPATCH_RETRIES}, "
+                        f"retry in {delay:.1f}s): {e}"
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    receipt.status = "nack"
+                    receipt.error = str(e)
+                    receipt.attempts = attempt
+                    receipt.latency_ms = latency
+                    self._receipts[message_id] = receipt
+                    logger.error(
+                        f"❌ NACK [{message_id}] task={task.id} "
+                        f"(重試耗盡): {e}"
+                    )
+                    return receipt
+
+        return receipt  # 不應到達，但確保型別安全
+
+    def get_receipt(self, message_id: str) -> Optional[MessageReceipt]:
+        """查詢訊息回執"""
+        return self._receipts.get(message_id)
+
+    def get_all_receipts(self) -> Dict[str, MessageReceipt]:
+        """取得所有訊息回執（供 Dashboard 使用）"""
+        return dict(self._receipts)
+
     async def dispatch_task(self, task: SubTask, global_context: str = "") -> str:
         """向指定的 sub-agent 派發任務，支援 A2A 共識網路 (協商與多簽審核)。"""
         logger.info(f"🚌 A2ABus: Dispatching Task [{task.id}] → {task.agent_role}")
