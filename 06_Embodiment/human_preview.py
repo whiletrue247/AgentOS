@@ -24,15 +24,27 @@ class HumanPreviewUI:
     def __init__(self):
         self.console = Console()
 
-    def request_approval(self, action_type: str, details: str) -> str:
+    def request_approval(self, action_type: str, details: str, screenshot_path: str = None) -> str:
         """
         提請人類審核桌面控制動作。
-        回傳: 'execute', 'modify', 'cancel'
+        
+        Args:
+            action_type: 動作類型 (如 "Mouse Click", "Keyboard Press")
+            details: 詳細參數描述
+            screenshot_path: 可選，截圖路徑供人類參考
+            
+        Returns:
+            'execute', 'modify', 或 'cancel'
         """
+        screenshot_info = ""
+        if screenshot_path:
+            screenshot_info = f"\n[bold green]截圖預覽:[/] {screenshot_path}"
+        
         self.console.print(Panel(
             f"[bold yellow]⚠️ Agent 請求桌面控制權限[/]\n\n"
             f"[bold cyan]動作類型:[/] {action_type}\n"
-            f"[bold cyan]詳細參數:[/] {details}\n\n"
+            f"[bold cyan]詳細參數:[/] {details}"
+            f"{screenshot_info}\n\n"
             "[dim]此操作將真實移動您的滑鼠或敲擊鍵盤。[/]",
             title="Human Preview (06_Embodiment)", border_style="yellow"
         ))

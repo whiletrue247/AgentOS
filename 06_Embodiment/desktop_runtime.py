@@ -16,6 +16,7 @@ import base64
 import logging
 import platform
 import subprocess
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,21 @@ class DesktopRuntime:
     """
     跨平台桌面控制引擎 (v5.0 SOTA)。
     實現 2026 Agentic Computer Use 標準的底層封裝。
+    
+    動作風險分級：
+      L0 (無風險): scroll, get_active_window_info → 無截圖無確認
+      L1 (低風險): click, type_text → require_approval 時才確認
+      L2 (高風險): press_key + 破壞性修飾鍵 → 強制截圖 + audit trail
     """
+
+    # L2 高危鍵 (強制截圖)
+    _HIGH_RISK_KEYS = frozenset({
+        "delete", "backspace", "return", "enter",
+        "tab",  # 可在終端機執行 auto-complete
+    })
+    _HIGH_RISK_MODIFIERS = frozenset({
+        "command", "cmd", "ctrl", "control", "super", "win",
+    })
 
     def __init__(self, require_approval: bool = False):
         self.os_type = platform.system()
@@ -46,6 +61,10 @@ class DesktopRuntime:
             except ImportError:
                 from human_preview import HumanPreviewUI
                 self.preview_ui = HumanPreviewUI()
+        
+        # Audit trail 截圖目錄
+        self._audit_dir = Path("/tmp/agentos_audit_screenshots")
+        self._audit_dir.mkdir(parents=True, exist_ok=True)
         
         backend = "pyautogui" if PYAUTOGUI_AVAILABLE else "mock"
         logger.info(f"🖥️ DesktopRuntime: os={self.os_type}, backend={backend}, approval={require_approval}")
@@ -131,11 +150,25 @@ class DesktopRuntime:
             logger.info(f"⌨️ [MOCK] Type: {text[:20]}...")
 
     def press_key(self, key_name: str, modifiers: Optional[list] = None):
-        """模擬按下快捷鍵 (如 enter, escape, cmd+c)"""
+        """模擬按下快捷鍵 (如 enter, escape, cmd+c)。L2 高危鍵強制截圖。"""
         mod_str = "+".join(modifiers) + "+" if modifiers else ""
-        if self.preview_ui and not self.preview_ui.request_approval("Keyboard Press", f"Key: {mod_str}{key_name}"):
-            logger.warning(f"🚫 拒絕 Press: {mod_str}{key_name}")
-            return
+        is_l2 = self._is_high_risk_key(key_name, modifiers)
+        
+        # L2 高危：強制截圖 audit trail
+        if is_l2:
+            screenshot_path = self._forced_screenshot_audit(f"press_{mod_str}{key_name}")
+            logger.warning(f"🔴 [L2 高危] press_key: {mod_str}{key_name} — 截圖已存: {screenshot_path}")
+        
+        # 確認機制 (L1: require_approval / L2: 強制)
+        if self.preview_ui and (self.require_approval or is_l2):
+            screenshot_path = getattr(self, '_last_audit_screenshot', None)
+            if not self.preview_ui.request_approval(
+                "Keyboard Press" + (" [⚠️ HIGH RISK]" if is_l2 else ""),
+                f"Key: {mod_str}{key_name}",
+                screenshot_path=screenshot_path,
+            ):
+                logger.warning(f"🚫 拒絕 Press: {mod_str}{key_name}")
+                return
             
         if PYAUTOGUI_AVAILABLE:
             if modifiers:
@@ -146,6 +179,37 @@ class DesktopRuntime:
         else:
             mod_str = "+".join(modifiers) + "+" if modifiers else ""
             logger.info(f"⌨️ [MOCK] Press: {mod_str}{key_name}")
+
+    # ----------------------------------------------------------
+    # Risk Classification Helpers
+    # ----------------------------------------------------------
+    @classmethod
+    def _is_high_risk_key(cls, key_name: str, modifiers: Optional[list] = None) -> bool:
+        """判斷鍵盤操作是否為 L2 高危。"""
+        key_lower = key_name.lower()
+        
+        # 高危鍵（無需修飾鍵）
+        if key_lower in cls._HIGH_RISK_KEYS:
+            return True
+        
+        # 任何帶有高危修飾鍵的組合
+        if modifiers:
+            for mod in modifiers:
+                if mod.lower() in cls._HIGH_RISK_MODIFIERS:
+                    return True
+        
+        return False
+
+    def _forced_screenshot_audit(self, action_label: str) -> str:
+        """強制截圖並存入 audit trail 目錄。回傳截圖路徑。"""
+        import time as _time
+        timestamp = _time.strftime("%Y%m%d_%H%M%S")
+        filename = f"{timestamp}_{action_label}.png"
+        save_path = str(self._audit_dir / filename)
+        
+        self.take_screenshot(save_path=save_path)
+        self._last_audit_screenshot = save_path
+        return save_path
 
     # ----------------------------------------------------------
     # Window Info (OS-native)

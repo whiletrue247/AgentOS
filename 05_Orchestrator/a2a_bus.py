@@ -1,11 +1,12 @@
 """
-05_Orchestrator — Agent-to-Agent Bus (v5.0 SOTA — LangGraph)
-==============================================================
+05_Orchestrator — Agent-to-Agent Bus (v5.0 SOTA — LangGraph + Swarm)
+=====================================================================
 使用 LangGraph StateGraph 實現多 Agent 編排：
   - TypedDict 定義圖狀態
   - 條件邊 (Conditional Edges) 支援任務路由
   - Human-in-the-Loop 審核節點
   - DAG 拓撲排序執行
+  - Hierarchical Swarm 支援 (從單層 DAG 過度到多層 Agent 階層)
 
 當 langgraph 不可用時，退回 asyncio.gather() 手動 DAG。
 """
@@ -13,10 +14,25 @@
 from __future__ import annotations
 
 import asyncio
+import enum
 import logging
 from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# Swarm Mode
+# ============================================================
+
+class SwarmMode(enum.Enum):
+    """多 Agent 執行模式"""
+    FLAT = "flat"                    # 單層 DAG（預設）
+    HIERARCHICAL = "hierarchical"    # 階層式 Swarm（過度委派）
+
+
+# 最大過度深度（防無限遞迴）
+MAX_SWARM_DEPTH = 3
 
 # 嘗試載入 LangGraph
 try:
@@ -63,13 +79,17 @@ if LANGGRAPH_AVAILABLE:
 
 class A2ABus:
     """
-    Agent-to-Agent Event Bus (v5.0 SOTA).
+    Agent-to-Agent Event Bus (v5.0 SOTA + Swarm).
     LangGraph 模式：使用 StateGraph 組織 Plan → Execute → Review 的圖流程。
+    Hierarchical 模式：複雜子任務可遞迴委派給子 Swarm。
     Fallback 模式：使用 asyncio.gather 做直接 DAG 排程。
     """
 
-    def __init__(self, engine: Any):
+    def __init__(self, engine: Any, depth: int = 0):
         self.engine = engine
+        self._depth = depth  # 當前 Swarm 深度
+        if depth > 0:
+            logger.info(f"🔄 A2ABus 子 Swarm 延伸 (depth={depth}/{MAX_SWARM_DEPTH})")
 
     # ----------------------------------------------------------
     # 核心：執行單個子任務
@@ -215,20 +235,89 @@ class A2ABus:
     # ----------------------------------------------------------
     # Asyncio Fallback (when langgraph is not installed)
     # ----------------------------------------------------------
-    async def run_dag(self, planner: Any, use_crewai: bool = False) -> Dict[str, str]:
+    async def run_dag(
+        self,
+        planner: Any,
+        use_crewai: bool = False,
+        swarm_mode: SwarmMode = SwarmMode.FLAT,
+    ) -> Dict[str, str]:
         """
         主入口：優先使用 LangGraph，可選 CrewAI 流程，否則退回 asyncio fallback。
+        
+        Args:
+            planner: TaskPlanner 實例
+            use_crewai: 是否使用 CrewAI
+            swarm_mode: Swarm 執行模式 (FLAT / HIERARCHICAL)
         """
         if use_crewai and CREWAI_AVAILABLE:
             logger.info("👥 Using CrewAI for DAG execution")
             return await run_crewai_dag(planner, self.engine)
 
         if LANGGRAPH_AVAILABLE:
-            logger.info("🔗 Using LangGraph StateGraph for DAG execution")
+            logger.info(f"🔗 Using LangGraph StateGraph (mode={swarm_mode.value}, depth={self._depth})")
             return await self.run_dag_langgraph(planner)
 
         logger.info("🔄 Using asyncio fallback for DAG execution")
         return await self._run_dag_asyncio(planner)
+
+    # ----------------------------------------------------------
+    # Hierarchical Swarm
+    # ----------------------------------------------------------
+    async def spawn_sub_swarm(
+        self,
+        sub_tasks: List[SubTask],
+        objective: str = "",
+    ) -> Dict[str, str]:
+        """
+        產生一個子 Swarm 來處理複雜子任務。
+        
+        當一個子任務很複雜時，Orchestrator 可以將它進一步分解為更小的任務，
+        交給一個新的 A2ABus 實例遞迴執行。
+        
+        Args:
+            sub_tasks: 子任務列表
+            objective: 子 Swarm 的總目標
+            
+        Returns:
+            各子任務的結果
+            
+        Raises:
+            RecursionError: Swarm 深度超過 MAX_SWARM_DEPTH
+        """
+        new_depth = self._depth + 1
+        if new_depth > MAX_SWARM_DEPTH:
+            logger.error(
+                f"🚨 Swarm 深度超過上限 ({MAX_SWARM_DEPTH})！"
+                f"拒絕延伸以防無限遞迴。"
+            )
+            raise RecursionError(
+                f"Swarm depth exceeded maximum ({MAX_SWARM_DEPTH}). "
+                f"Aborting to prevent infinite recursion."
+            )
+
+        logger.info(
+            f"🐝 Spawning sub-swarm (depth={new_depth}/{MAX_SWARM_DEPTH}, "
+            f"tasks={len(sub_tasks)}, objective='{objective[:50]}...')"
+        )
+
+        # 建立子 A2ABus
+        child_bus = A2ABus(engine=self.engine, depth=new_depth)
+
+        # 遏輯執行子任務
+        results: Dict[str, str] = {}
+        for task in sub_tasks:
+            try:
+                result = await child_bus.dispatch_task(
+                    task,
+                    global_context=f"[Sub-Swarm Depth {new_depth}] Objective: {objective}",
+                )
+                results[task.id] = result
+            except Exception as e:
+                logger.error(f"❌ Sub-swarm task [{task.id}] failed: {e}")
+                results[task.id] = f"Error: {e}"
+
+        logger.info(f"✅ Sub-swarm (depth={new_depth}) completed: {len(results)} tasks")
+        return results
 
     async def _run_dag_asyncio(self, planner: Any) -> Dict[str, str]:
         """Fallback DAG executor (pure asyncio)."""
