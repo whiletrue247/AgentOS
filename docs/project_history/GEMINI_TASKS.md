@@ -275,7 +275,7 @@
 - **commit**: `👤 feat(computer-use): human preview gate — screenshot + Run/Modify/Cancel before execution`
 
 ### Task H-3: Mem0 整合 (混合記憶搜尋)
-- **檔案**: `02_Memory_Context/mem0_provider.py` (新增), `07_PKG/graph_rag.py` (修改)
+- **檔案**: `02_Memory_Context/mem0_provider.py` (新增) — *已遷移至 `02_Memory/providers/`*, `07_PKG/graph_rag.py` (修改)
 - **背景**: 目前記憶用 SQLite，KG 用 Neo4j/NetworkX。需要 Mem0 作為中間層提供 vector + graph 混合搜尋
 - **要求**:
   - 新增 `mem0_provider.py`:

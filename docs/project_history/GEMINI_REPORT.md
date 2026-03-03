@@ -213,7 +213,7 @@
 ### Task H-3: Mem0 Integration
 - **Commit**: `850587e` ✨ feat(memory): mem0.ai vector memory provider and graphrag hybrid integration
 - **改動**:
-  - 新增 `02_Memory_Context/mem0_provider.py` (81 行)
+  - 新增 `02_Memory_Context/mem0_provider.py` (81 行) — *已遷移至 `02_Memory/providers/mem0_provider.py`*
   - 修改 `07_PKG/graph_rag.py`
 - **實作細節**:
   - 實作 `Mem0Provider` 來介接 `mem0.ai` 的 `Memory` 物件，使用本地 `chroma` 向量庫。

@@ -1,5 +1,5 @@
 """
-02_Memory_Context — Mem0 Hybrid Memory Provider (v5.0 SOTA)
+02_Memory — Mem0 Hybrid Memory Provider (v5.0 SOTA)
 =============================================================
 透過 mem0.ai 整合非結構化記憶 (向量存儲 + 用戶長期記憶)。
 提供與 GraphRAG 相輔相成的關聯檢索能力。

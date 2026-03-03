@@ -26,7 +26,7 @@ try:
     import importlib.util
     import sys
     import os
-    mem0_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../02_Memory_Context/mem0_provider.py"))
+    mem0_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../02_Memory/providers/mem0_provider.py"))
     spec = importlib.util.spec_from_file_location("mem0_provider", mem0_path)
     mem0_module = importlib.util.module_from_spec(spec)
     sys.modules["mem0_provider"] = mem0_module

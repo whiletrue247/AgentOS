@@ -37,6 +37,7 @@ agentos_sandbox_*/
 test_fib.py
 script.sh
 script.py
+exec_*/
 
 # Environment
 .env

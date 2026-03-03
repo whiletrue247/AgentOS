@@ -52,7 +52,7 @@ graph TD
     
     subgraph Core OS
         Kernel[01_Kernel: SOUL Daemon] --> Engine
-        Engine <--> Mem[02_Memory_Context: Mem0/PKG]
+        Engine <--> Mem[02_Memory: Mem0/PKG]
         Engine <--> Tool[03_Tool_System: Sandbox/ZeroTrust]
         Engine <--> Orch[05_Orchestrator: Swarm & CrewAI]
         Engine <--> Embodiment[06_Embodiment: Human Preview/Desktop]
@@ -72,7 +72,7 @@ graph TD
 ## 核心系統 11 大模組列表
 
 1. **`01_Kernel` — 靈魂與進程守護者**：載入 `SOUL.md` 與系統守護行程。
-2. **`02_Memory_Context` — 混合記憶池**：整合 Mem0 (向量) 支援，作為上下文高速快取。
+2. **`02_Memory` — 混合記憶池**：整合 Mem0 (向量) 支援，作為上下文高速快取。
 3. **`03_Tool_System` — 囚犯沙盒**：WASM/Subprocess 隔離執行，避免本機崩壞。
 4. **`04_Engine` — 決策引擎與安全閥**：涵蓋 SmartRouter (動態省錢路由)、ZeroTrust (零信任人工審核放行) 與 Audit Trail 監控。
 5. **`05_Orchestrator` — 網狀協同總線**：支援 LangGraph DAG、CrewAI 角色分派與非同步 Agent to Agent (A2A) 通訊。
