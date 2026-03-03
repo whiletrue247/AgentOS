@@ -81,3 +81,13 @@
   - 透過 `save_checkpoint(thread_id, state_dict)` 與 `load_checkpoint()` 保存 LangGraph 的對話與推理狀態
   - `export_session_state()` 將當下狀態序列化為 Base64 URI `agentos://handoff?payload=...`
   - `import_session_state()` 還原 URI 回存至資料庫以便無縫接力執行
+
+### Task C-2: External OS Hooks — 真正的作業系統掛載
+- **Commit**: `b1d4ba3` ⚙️ feat(os): Real OS Hook implementation with dbus, AppKit, comtypes fallbacks
+- **改動**:
+  - 修改 `09_OS_Integration/os_hook.py` (64 行)
+- **實作細節**:
+  - Windows: 新增 `pywinauto` 或 `powershell` 作為 `inject_event` 的降級方案
+  - macOS: 實作 `osascript` 的 `System Events` 來達到 `inject_event` (取代空殼 mock)
+  - Linux: 針對 `get_active_window` 擴增 `dbus` 連接對象 (支援 GNOME 與 KDE Plasma API)，補齊 Wayland `hyprctl`/`swaymsg` 外的覆蓋率
+  - 確保不具備套件或權限不足時能優雅地 fallback 成功
