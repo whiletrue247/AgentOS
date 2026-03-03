@@ -1,0 +1,4 @@
+import asyncio
+from tests.test_smart_router import test_failover_routing_offline_switch
+
+asyncio.run(test_failover_routing_offline_switch())
