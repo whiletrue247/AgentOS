@@ -131,6 +131,14 @@
   - **KG Stats 面板**: 對接 `graph_rag.py` 顯示 Nodes 與 Edges 的大小狀況。
   - **Router & Agent 面板**: 顯示 `ROUTER_AVAILABLE` 下的 NPU 與目前成本追蹤、Agent Swarm 的待命狀態。
 
+### Task E-2: 模擬未來 10 步 CLI 命令
+- **Commit**: `867e584` 📊 feat(dashboard): CLI commands for simulate and audit with Rich output
+- **改動**:
+  - 新增 `08_Dashboard/cli_commands.py` (151 行)
+- **實作細節**:
+  - 實作了 `simulate_cmd`，可以動態印出 Agent 預判執行的軌跡 (Thought, Action, RiskLevel)。遇到 High Risk 會亮紅字並發出 Warning 與強制人類審核確認 `(y/N)`。
+  - 實作了 `audit_cmd`，支援直接從 `audit_trail` 匯出近期天數的 `Markdown` 操作記錄日誌並使用 `Rich` 行內高光渲染。
+
 ---
 
 ## ✅ 總結 (All Tasks Completed)
