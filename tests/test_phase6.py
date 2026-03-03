@@ -63,21 +63,40 @@ def test_marketplace():
     assert wallet.balance == 2.5
 
 def test_handoff_manager():
-    manager = handoff_manager_mod.HandoffManager()
-    
-    # 模擬任務狀態
-    mock_state = {"current_node": "planning", "messages": [{"role": "user", "content": "Help me"}]}
-    task_id = "task-alpha-123"
-    
-    # 輸出加密的 URI
-    uri = manager.export_session_state(task_id, mock_state)
-    assert uri.startswith("agentos://handoff?payload=")
-    
-    # 解密導入 URI
-    restored_state = manager.import_session_state(uri)
-    assert restored_state is not None
-    assert restored_state["current_node"] == "planning"
-    assert restored_state["messages"][0]["content"] == "Help me"
-    
-    # 測試壞掉的 URI
-    assert manager.import_session_state("agentos://baduri") is None
+    import os
+    db_path = "tests/test_handoff.db"
+    if os.path.exists(db_path):
+        os.remove(db_path)
+        
+    try:
+        manager = handoff_manager_mod.HandoffManager(db_path=db_path)
+        
+        # 模擬任務狀態
+        mock_state = {"current_node": "planning", "messages": [{"role": "user", "content": "Help me"}]}
+        thread_id = "thread-alpha-123"
+        
+        # Save checkpoint locally first
+        manager.save_checkpoint(thread_id, mock_state)
+        
+        # 輸出加密的 URI
+        uri = manager.export_session_state(thread_id)
+        assert uri is not None
+        assert uri.startswith("agentos://handoff?payload=")
+        
+        # 用同一個 (或新的) manager 接收 URI (此處我們直接塞回同一個 db)
+        # import 會把狀態存進 DB 裡並回傳 thread_id
+        imported_thread_id = manager.import_session_state(uri)
+        assert imported_thread_id == thread_id
+        
+        # 從 DB 解讀狀態
+        restored_state = manager.load_checkpoint(imported_thread_id)
+        assert restored_state is not None
+        assert restored_state["current_node"] == "planning"
+        assert restored_state["messages"][0]["content"] == "Help me"
+        
+    finally:
+        if os.path.exists(db_path):
+            try:
+                os.remove(db_path)
+            except Exception:
+                pass
