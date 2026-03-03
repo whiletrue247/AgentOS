@@ -1,8 +1,14 @@
-import yaml
-import re
+from __future__ import annotations
+
 import os
+import re
+import sys
 import logging
-from typing import Dict, Any, Tuple
+
+import yaml
+from typing import Any, Dict, Tuple
+
+__all__ = ["ZeroTrustInterceptor", "PermissionDeniedError", "get_interceptor"]
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +115,6 @@ class ZeroTrustInterceptor:
         print("="*60 + "\033[0m")
         
         # 為了能在 CI/測試中自動通過，若無 TTY 直接阻擋
-        import sys
         if not sys.stdin.isatty():
             logger.warning("No TTY available. Auto-canceling dangerous operation.")
             return 'cancel'

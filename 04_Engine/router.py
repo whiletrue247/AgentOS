@@ -9,10 +9,14 @@
   5. 使用者綁定 (config.yaml agents 映射)
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import os
 from typing import Optional, Any, Dict, List
+
+__all__ = ["SmartRouter"]
 
 logger = logging.getLogger(__name__)
 

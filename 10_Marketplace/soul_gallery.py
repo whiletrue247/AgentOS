@@ -5,6 +5,8 @@
 將 SOUL.md 與對應的 Metadata 打包成 .soul.zip，方便加密與流傳。
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
 import logging
@@ -15,6 +17,8 @@ from pathlib import Path
 from typing import List, Tuple, Optional
 
 from paths import get_data_dir, get_soul_path
+
+__all__ = ["SoulGallery", "SoulInfo"]
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +135,7 @@ class SoulGallery:
             try:
                 extracted_metadata = json.loads(json_path.read_text(encoding="utf-8"))
             except Exception as e:
-                raise ValueError(f"Malformed metadata JSOn in archive: {e}")
+                raise ValueError(f"Malformed metadata JSON in archive: {e}")
 
         # Verification passed, copy the zip to Gallery catalog
         dest_zip = GALLERY_DIR / zp.name

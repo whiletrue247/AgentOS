@@ -5,9 +5,15 @@
 則將截圖或動作坐標傳送至這裡，由人類審核放行 (Human-in-the-Loop)。
 """
 
+from __future__ import annotations
+
 import logging
+import sys
+
 from rich.console import Console
 from rich.panel import Panel
+
+__all__ = ["HumanPreviewUI"]
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +37,6 @@ class HumanPreviewUI:
             title="Human Preview (06_Embodiment)", border_style="yellow"
         ))
 
-        import sys
         if not sys.stdin.isatty():
             # 無法互動時預設阻斷
             logger.warning("⚠️ 非互動環境，拒絕桌面控制。")

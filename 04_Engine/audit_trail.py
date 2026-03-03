@@ -5,15 +5,20 @@
 資料以 SQLite 持久化，並提供 Markdown 格式的歷史匯出功能。
 """
 
+from __future__ import annotations
+
 import datetime
 import hashlib
 import json
 import logging
 import sqlite3
+import threading
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from paths import get_data_dir
+
+__all__ = ["AuditTrail", "AuditEntry", "get_audit_trail"]
 
 logger = logging.getLogger(__name__)
 
@@ -193,12 +198,16 @@ class AuditTrail:
             
         return "\n".join(report)
 
-# Global singleton instance
+# Thread-safe singleton
 _audit_trail_instance: Optional[AuditTrail] = None
+_audit_trail_lock = threading.Lock()
 
 def get_audit_trail() -> AuditTrail:
-    """Get the singleton AuditTrail instance."""
+    """Get the thread-safe singleton AuditTrail instance."""
     global _audit_trail_instance
     if _audit_trail_instance is None:
-        _audit_trail_instance = AuditTrail()
+        with _audit_trail_lock:
+            # Double-checked locking
+            if _audit_trail_instance is None:
+                _audit_trail_instance = AuditTrail()
     return _audit_trail_instance

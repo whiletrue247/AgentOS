@@ -9,8 +9,11 @@ AgentOS v5.0 可觀測性 Dashboard 2.0
  - Agent Status (Agent 註冊狀態)
 """
 
+from __future__ import annotations
+
 import time
 import logging
+from typing import Any, Optional
 
 
 from rich.console import Console
@@ -21,6 +24,8 @@ from rich.table import Table
 from rich.text import Text
 
 # 初始化 Logger (避免輸出干擾畫面，這裏關閉或導向檔案)
+__all__ = ["Dashboard"]
+
 logger = logging.getLogger(__name__)
 
 # --- 嘗試載入系統模組 ---
@@ -28,7 +33,6 @@ logger = logging.getLogger(__name__)
 try:
     from sys import path
     import os
-    # 確保能 import 根目錄的模組
     sys_path_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     if sys_path_root not in path:
         path.insert(0, sys_path_root)
@@ -42,37 +46,21 @@ except ImportError:
     except ImportError:
         AUDIT_AVAILABLE = False
 
-# 2. KG Stats
-try:
-    from graph_rag import GraphRAG
-    KG_AVAILABLE = True
-except ImportError:
-    KG_AVAILABLE = False
-
-# 3. Router
-try:
-    _ = __import__("router")
-    ROUTER_AVAILABLE = True
-except ImportError:
-    ROUTER_AVAILABLE = False
-
-# 4. Agent Registry
-try:
-    _ = __import__("agent_registry")
-    REGISTRY_AVAILABLE = True
-except ImportError:
-    REGISTRY_AVAILABLE = False
-
 
 class Dashboard:
-    def __init__(self):
+    """可觀測性 TUI 面板，支援主子系統即時狀態注入。"""
+
+    def __init__(
+        self,
+        router: Optional[Any] = None,
+        kg_graph: Optional[Any] = None,
+        agent_registry: Optional[Any] = None,
+    ):
         self.console = Console()
         self.audit = get_audit_trail() if AUDIT_AVAILABLE else None
-        
-        # 實戰中這裡會綁定到真正的全域實例，這裡為了展示產生一些實例化邏輯
-        self.kg = GraphRAG(config=None) if KG_AVAILABLE else None
-        self.router = None # 若有全域 instance 應替換
-        self.registry = None
+        self.router = router
+        self.kg_graph = kg_graph
+        self.agent_registry = agent_registry
 
     def make_audit_panel(self) -> Panel:
         table = Table(show_header=True, header_style="bold magenta", expand=True)
@@ -110,18 +98,16 @@ class Dashboard:
         table.add_column("Metric", style="cyan")
         table.add_column("Value", style="white")
 
-        if self.kg:
+        if self.kg_graph:
             try:
-                stats = self.kg.display_stats()
+                stats = self.kg_graph.display_stats()
                 table.add_row("Nodes", str(stats.get("nodes", 0)))
                 table.add_row("Edges", str(stats.get("edges", 0)))
-                # 模擬最近新增的 triple
-                # table.add_row("Recent Triple", "(Agent, created, Task)")
             except Exception:
                 table.add_row("Status", "Mock / Disconnected")
                 table.add_row("Nodes/Edges", "0 / 0")
         else:
-            table.add_row("Status", "KG module not found")
+            table.add_row("Status", "KG module not injected")
             table.add_row("Nodes/Edges", "N/A")
 
         return Panel(table, title="🧠 Knowledge Graph Stats", border_style="green")
@@ -131,13 +117,16 @@ class Dashboard:
         table.add_column("Key", style="yellow")
         table.add_column("Value", style="white")
 
-        if ROUTER_AVAILABLE:
-            table.add_row("NPU Status", "Active (Detected: Apple Neural Engine)") 
-            table.add_row("Current Model", "ollama/llama3.2 (Local Preference)")
-            table.add_row("Session Cost", "$0.0245 USD")
-            table.add_row("Network Mode", "Hybrid Mode (Online)")
+        if self.router:
+            hw = getattr(self.router, "hw_profile", None)
+            npu_status = hw.recommended_local_backend if hw else "N/A"
+            cost = getattr(self.router, "_session_cost_usd", 0.0)
+            offline = getattr(self.router, "offline_mode", False)
+            table.add_row("NPU Backend", str(npu_status))
+            table.add_row("Session Cost", f"${cost:.4f} USD")
+            table.add_row("Network Mode", "OFFLINE" if offline else "Hybrid (Online)")
         else:
-            table.add_row("Model Router", "Not Available")
+            table.add_row("Model Router", "Not Injected")
 
         return Panel(table, title="🚦 Smart Router & Cost", border_style="yellow")
 
@@ -147,14 +136,15 @@ class Dashboard:
         table.add_column("Status")
         table.add_column("Capabilities")
 
-        if REGISTRY_AVAILABLE:
-            # 實戰應從 registry 讀取
-            table.add_row("orchestrator", "[green]idle[/]", "shell, network, code")
-            table.add_row("critic", "[green]idle[/]", "web_search, review")
-            table.add_row("writer", "[yellow]busy[/]", "write_file")
+        if self.agent_registry:
+            try:
+                agents = self.agent_registry.list_agents() if hasattr(self.agent_registry, 'list_agents') else []
+                for a in agents:
+                    table.add_row(str(a.get('id', 'N/A')), str(a.get('status', 'idle')), str(a.get('capabilities', '')))
+            except Exception:
+                table.add_row("default", "[green]idle[/]", "all")
         else:
-            table.add_row("default", "[green]idle[/]", "all")
-            table.add_row("coder", "[green]idle[/]", "python, shell")
+            table.add_row("default", "[green]idle[/]", "all (registry not injected)")
 
         return Panel(table, title="🐝 Agent Swarm Status", border_style="magenta")
 

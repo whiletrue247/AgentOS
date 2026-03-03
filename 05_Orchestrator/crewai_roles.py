@@ -5,8 +5,13 @@
 讀取 SOUL.md / SubTask，分派 Persona，執行 Sequential Process 任務。
 """
 
+from __future__ import annotations
+
+import asyncio
 import logging
 from typing import Any, Dict, List
+
+__all__ = ["CrewAIBuilder", "CREWAI_AVAILABLE", "run_crewai_dag"]
 
 logger = logging.getLogger(__name__)
 
@@ -96,9 +101,8 @@ async def run_crewai_dag(planner: Any, engine: Any) -> Dict[str, str]:
     crew = builder.build_crew(list(crew_agents.values()), crew_tasks)
     
     logger.info("👥 Starting CrewAI kickoff process...")
-    # CrewAI kickoff is blocking usually, but we run it in async compatible way if needed
-    # for demo we just call kickoff
-    result = crew.kickoff()
+    # CrewAI kickoff 是阻塞式呼叫，必須用 to_thread 包裝避免凍結 event loop
+    result = await asyncio.to_thread(crew.kickoff)
     
     logger.info("🏁 CrewAI workflow finished. Global result summarized.")
     

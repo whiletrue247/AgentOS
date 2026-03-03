@@ -10,9 +10,11 @@
   - 臨時工作目錄: 每次執行建立隔離的 temp dir
 """
 
+from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import signal
 import sys
 import tempfile
@@ -26,13 +28,22 @@ except ImportError:
 
 from contracts.interfaces import ToolCallResult
 
+__all__ = ["SubprocessSandbox"]
+
 logger = logging.getLogger(__name__)
 
-# 高危指令前置攔截 (在 Zero Trust 之上的額外靜態防線)
-BLOCKED_COMMANDS = {
-    "rm -rf /", "rm -rf /*", "mkfs.", "dd if=", ":(){", "chmod -R 777 /",
-    "> /dev/sd", "curl | bash", "wget | bash", "fork()", "os.system",
-}
+# 高危指令前置攔截 (使用正規表達式 + word boundary 避免誤攔)
+_BLOCKED_PATTERNS = [
+    re.compile(r"\brm\s+-rf\s+/"),
+    re.compile(r"\brm\s+-rf\s+/\*"),
+    re.compile(r"\bmkfs\."),
+    re.compile(r"\bdd\s+if="),
+    re.compile(r":\(\)\s*\{"),       # fork bomb
+    re.compile(r"\bchmod\s+-R\s+777\s+/"),
+    re.compile(r">\s*/dev/sd"),
+    re.compile(r"\bcurl\s+.*\|\s*bash"),
+    re.compile(r"\bwget\s+.*\|\s*bash"),
+]
 
 
 class SubprocessSandbox:
@@ -88,14 +99,15 @@ class SubprocessSandbox:
         """執行腳本 (含多層安全攔截)。"""
         start_time = time.time()
 
-        # ========== Layer 1: Static Command Blocking ==========
+        # ========== Layer 1: Static Command Blocking (Regex) ==========
         code_lower = code.lower().strip()
-        for blocked in BLOCKED_COMMANDS:
-            if blocked in code_lower:
-                logger.critical(f"🚨 BLOCKED: Static pattern match: {blocked}")
+        for pattern in _BLOCKED_PATTERNS:
+            match = pattern.search(code_lower)
+            if match:
+                logger.critical(f"🚨 BLOCKED: Regex match: {match.group()}")
                 return ToolCallResult(
                     tool_name=f"{language}_exec", success=False, output="",
-                    error=f"Blocked by static security filter: contains '{blocked}'",
+                    error=f"Blocked by static security filter: regex '{pattern.pattern}'",
                 )
 
         # ========== Layer 2: Zero Trust ACL ==========

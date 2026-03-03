@@ -5,9 +5,13 @@
 提供與 GraphRAG 相輔相成的關聯檢索能力。
 """
 
+from __future__ import annotations
+
 import logging
 import os
 from typing import Any, Dict
+
+__all__ = ["Mem0Provider", "MEM0_AVAILABLE"]
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +32,7 @@ class Mem0Provider:
 
         if MEM0_AVAILABLE:
             try:
-                chroma_path = os.path.join(os.getcwd(), "data/mem0_chroma")
+                chroma_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "mem0_chroma")
                 os.makedirs(chroma_path, exist_ok=True)
                 
                 # Mem0 Config

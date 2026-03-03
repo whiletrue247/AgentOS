@@ -4,18 +4,29 @@
 跨裝置 Agent 狀態接力管理器。
 透過序列化 state 的 thread_id，並匯出 state checkpoint，可以將工作在不同設備或 Agent 間交接。
 這裡我們實作一個基於 SQLite 的簡易 Checkpointer，並支援匯出打包狀態。
+所有匯出的 Handoff URI 均使用 HMAC-SHA256 簽章驗證完整性。
 """
 
+from __future__ import annotations
+
 import base64
+import hashlib
+import hmac
 import json
 import logging
+import os
 import sqlite3
 import uuid
 from typing import Any, Dict, Optional
 
 from paths import get_data_dir
 
+__all__ = ["HandoffManager"]
+
 logger = logging.getLogger(__name__)
+
+# HMAC 簽章密鑰 (實務中應從 secret_manager 取得)
+_HMAC_KEY = os.environ.get("AGENTOS_HANDOFF_SECRET", "agentos-default-handoff-key-change-me").encode("utf-8")
 
 DB_PATH = get_data_dir() / "handoff_checkpoint.db"
 
@@ -75,7 +86,7 @@ class HandoffManager:
 
     def export_session_state(self, thread_id: str) -> Optional[str]:
         """ 
-        將當前任務狀態打包，產生交接 URI (例如放入 QR Code)。
+        將當前任務狀態打包，產生帶 HMAC 簽章的交接 URI。
         實戰中這適合跨設備同步 (Mobile <-> PC)。
         """
         state_dict = self.load_checkpoint(thread_id)
@@ -84,31 +95,53 @@ class HandoffManager:
             return None
 
         payload = {
-            "version": "1.1",
+            "version": "1.2",
             "source_device": self.local_device_id,
             "thread_id": thread_id,
             "state_snapshot": state_dict,
         }
         
-        # 轉成 base64 模擬打包
-        json_str = json.dumps(payload, ensure_ascii=False)
+        json_str = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         base64_payload = base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
         
-        handoff_uri = f"agentos://handoff?payload={base64_payload}"
-        logger.info(f"🔄 產生 Handoff URI 成功 (Thread: {thread_id})。長度: {len(handoff_uri)} bytes")
+        # HMAC-SHA256 完整性簽章
+        signature = hmac.new(_HMAC_KEY, base64_payload.encode("utf-8"), hashlib.sha256).hexdigest()
+        
+        handoff_uri = f"agentos://handoff?payload={base64_payload}&sig={signature}"
+        logger.info(f"🔄 產生 Handoff URI 成功 (Thread: {thread_id}, HMAC signed)。長度: {len(handoff_uri)} bytes")
         return handoff_uri
         
     def import_session_state(self, handoff_uri: str) -> Optional[str]:
         """ 
-        接收來自其他裝置的接力 URI，解密並還原寫入本地 DB。
+        接收來自其他裝置的接力 URI，**驗證 HMAC 簽章**後還原寫入本地 DB。
         回傳 thread_id，方便接續執行。
         """
         try:
-            if not handoff_uri.startswith("agentos://handoff?payload="):
+            if not handoff_uri.startswith("agentos://handoff?"):
                 logger.error("❌ 無效的 Handoff URI 格式")
                 return None
+            
+            # 解析 URI 參數
+            query_part = handoff_uri.split("?", 1)[1]
+            params: Dict[str, str] = {}
+            for pair in query_part.split("&"):
+                if "=" in pair:
+                    k, v = pair.split("=", 1)
+                    params[k] = v
+            
+            base64_payload = params.get("payload", "")
+            received_sig = params.get("sig", "")
+            
+            if not base64_payload:
+                logger.error("❌ Handoff URI 缺少 payload")
+                return None
+            
+            # HMAC 完整性驗證
+            expected_sig = hmac.new(_HMAC_KEY, base64_payload.encode("utf-8"), hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(expected_sig, received_sig):
+                logger.critical("🚨 Handoff URI HMAC 驗證失敗！可能遭到竄改，拒絕匯入。")
+                return None
                 
-            base64_payload = handoff_uri.split("payload=")[1]
             json_str = base64.b64decode(base64_payload).decode("utf-8")
             payload = json.loads(json_str)
             
@@ -116,10 +149,9 @@ class HandoffManager:
             thread_id = payload.get("thread_id", "Unknown")
             state_dict = payload.get("state_snapshot", {})
             
-            # 將收到的狀態寫入本地 Checkpoint DB
             self.save_checkpoint(thread_id, state_dict)
             
-            logger.info(f"✅ 成功接力！來自裝置 {source_device} 的任務 (Thread: {thread_id})")
+            logger.info(f"✅ 成功接力！來自裝置 {source_device} 的任務 (Thread: {thread_id}, HMAC verified ✓)")
             return thread_id
             
         except Exception as e:

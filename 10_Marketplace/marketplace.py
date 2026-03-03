@@ -5,6 +5,8 @@ Marketplace 核心模組，提供本地與遠端的 Tool/Soul 下載安裝，
 並且強制使用 JSON Schema 來管理 Tool，杜絕 exec_module 防範 RCE 風險。
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import os
@@ -13,6 +15,8 @@ from dataclasses import dataclass
 from typing import Dict, List
 
 from paths import get_data_dir
+
+__all__ = ["Marketplace", "ToolInfo"]
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +87,8 @@ class Marketplace:
                         }
                     },
                     "script_language": "python",
-                    "script_code": "import sys, math\nexpr=sys.argv[1]\nprint(eval(expr, {'__builtins__': {}}, math.__dict__))"
+                    # 安全計算：使用 ast.literal_eval 防止 RCE，禁止 eval()
+                    "script_code": "import sys, ast\\nexpr=sys.argv[1]\\nresult=ast.literal_eval(expr)\\nprint(result)"
                 }
             }
 
