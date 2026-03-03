@@ -64,15 +64,36 @@ class ToolInstaller:
             logger.error(f"❌ 安裝工具 {tool_name} 失敗: {e}")
             return False
 
-    def _enforce_https(self, url: str) -> bool:
-        if url.startswith("http://") and "127.0.0.1" not in url and "localhost" not in url:
-            logger.error(f"🔒 安全阻擋: 拒絕從非加密的 HTTP 下載 ({url})")
-            return False
-        return True
+    def _verify_trusted_domain(self, url: str) -> bool:
+        """驗證是否來自受信任的網域 (Supply Chain Security Allowlist)"""
+        # 如果是本地檔案路徑，則放行
+        if not url.startswith("http"):
+            return True
+            
+        from urllib.parse import urlparse
+        trusted_domains = [
+            "raw.githubusercontent.com",
+            "github.com",
+            "api.github.com",
+        ]
+        
+        try:
+            parsed = urlparse(url)
+            domain = parsed.netloc.lower()
+            # 支援 exact match 或 sub-domain (如 raw.githubusercontent.com)
+            if any(domain == td or domain.endswith("." + td) for td in trusted_domains):
+                return True
+        except Exception:
+            pass
+            
+        logger.error(f"🔒 安全阻擋: 拒絕從不受信任的網域下載 ({url})。請使用受信任的來源 (如 GitHub)。")
+        return False
 
     def _verify_hash(self, content: bytes, expected_hash: Optional[str]) -> bool:
         if not expected_hash:
-            return True
+            logger.error(f"🔒 安全阻擋: 缺乏 expected_hash！嚴禁下載未經 Checksum 驗證的外部元件。")
+            return False
+            
         computed = hashlib.sha256(content).hexdigest()
         if computed != expected_hash:
             logger.error(f"🔒 安全阻擋: Checksum 驗證失敗 (Expected: {expected_hash}, Got: {computed})")
@@ -84,7 +105,7 @@ class ToolInstaller:
         下載 JSON Schema 並註冊。
         """
         if source_url.startswith("http"):
-            if not self._enforce_https(source_url):
+            if not self._verify_trusted_domain(source_url):
                 return False
             req = urllib.request.Request(source_url, headers={'User-Agent': 'AgentOS'})
             with urllib.request.urlopen(req) as response:
@@ -119,7 +140,7 @@ class ToolInstaller:
         raw_bytes = b""
         
         if source_url.startswith("http"):
-            if not self._enforce_https(source_url):
+            if not self._verify_trusted_domain(source_url):
                 return False
             req = urllib.request.Request(source_url, headers={'User-Agent': 'AgentOS'})
             with urllib.request.urlopen(req) as response:
