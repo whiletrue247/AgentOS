@@ -1,5 +1,7 @@
 # Agent Base OS — 核心架構藍圖 (v5.0)
 
+**繁體中文** | [English](./README_EN.md)
+
 ![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)

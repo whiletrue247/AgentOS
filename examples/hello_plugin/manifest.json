@@ -1,0 +1,16 @@
+{
+    "name": "hello_world",
+    "version": "1.0.0",
+    "author": "AgentOS Team",
+    "description": "A simple greeting tool demonstrating the AgentOS plugin structure.",
+    "license": "MIT",
+    "agentos_min_version": "5.0.0",
+    "tags": [
+        "greeting",
+        "demo",
+        "starter",
+        "template"
+    ],
+    "install_type": "local_plugin",
+    "repository": "https://github.com/whiletrue247/AgentOS"
+}
