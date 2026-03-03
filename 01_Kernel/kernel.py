@@ -51,6 +51,15 @@ class Kernel:
                 if not content:
                     logger.warning("⚠️ SOUL.md 為空。")
                     content = "You are a helpful AI Agent."
+                    
+                # 防禦: 超長 SOUL.md 保護 (上限 10 萬字元，約 2-3 萬 tokens)
+                MAX_SOUL_LEN = 100_000
+                if len(content) > MAX_SOUL_LEN:
+                    logger.error(
+                        f"🚨 SOUL.md 超過長度限制 ({len(content)} > {MAX_SOUL_LEN} chars)！"
+                        f"為避免 Context Window 爆炸，已自動截斷結尾。"
+                    )
+                    content = content[:MAX_SOUL_LEN] + "\n\n...[SOUL TRUNCATED DUE TO EXCESSIVE LENGTH]..."
 
                 # 版本控制
                 self._track_version(content, soul_path)

@@ -9,6 +9,7 @@ platform/dashboard/server.py
 import asyncio
 import json
 import logging
+import secrets
 from pathlib import Path
 
 from aiohttp import web
@@ -16,6 +17,31 @@ from config_schema import AgentOSConfig
 from contracts.interfaces import EngineEvent, EventType
 
 logger = logging.getLogger(__name__)
+
+
+@web.middleware
+async def auth_middleware(request: web.Request, handler):
+    """保護 /api/ 路徑的鑒權中間件"""
+    if request.path.startswith("/api/"):
+        server: "DashboardServer" = request.app["dashboard_server"]
+        
+        # 允許 OPTIONS 預檢請求
+        if request.method == "OPTIONS":
+            return await handler(request)
+
+        # 檢查 Header
+        auth_header = request.headers.get("Authorization", "")
+        token = auth_header.replace("Bearer ", "").strip()
+        
+        # 檢查 Query 參數 (供 SSE 或是直接 GET 使用)
+        if not token:
+            token = request.query.get("token", "").strip()
+
+        if token != server.admin_token:
+            logger.warning(f"🔒 拒絕未授權的 Dashboard API 存取: {request.path}")
+            return web.json_response({"error": "Unauthorized"}, status=401)
+
+    return await handler(request)
 
 
 class DashboardServer:
@@ -26,7 +52,11 @@ class DashboardServer:
         self.cost_guard = cost_guard
         self.event_trace = event_trace  # EventTrace 實例 (Observability 2.0)
         
-        self.app = web.Application()
+        # 產生一次性 Admin Token
+        self.admin_token = secrets.token_urlsafe(16)
+        
+        self.app = web.Application(middlewares=[auth_middleware])
+        self.app["dashboard_server"] = self  # 讓 middleware 可以存取 server 實例
         self._setup_routes()
         
         # SSE 客戶端清單
@@ -210,6 +240,8 @@ class DashboardServer:
         site = web.TCPSite(runner, '0.0.0.0', port)
         await site.start()
         logger.info(f"🌐 Dashboard 已啟動於 http://localhost:{port}")
+        logger.info(f"🔑 Dashboard Access Token: {self.admin_token}")
+        print(f"\n[Dashboard Auth] 您的本機面板存取 Token 為: {self.admin_token}\n")
 
     async def stop(self) -> None:
         """停止 Web Server 確保優雅關閉"""
