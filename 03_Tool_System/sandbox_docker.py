@@ -84,8 +84,19 @@ class DockerSandbox(SandboxProvider):
             "docker", "run", "--rm",
             "-v", f"{self.work_dir}:/app",
             "-w", "/app",
+            # === 資源限制 ===
             "--memory=128m",
             "--cpus=0.5",
+            "--pids-limit=64",             # 防止 fork bomb
+            # === 権限雙降 ===
+            "--read-only",                  # 唯讀根檔案系統
+            "--tmpfs", "/tmp:size=64m,noexec,nosuid",  # 僅 /tmp 可寫
+            "--cap-drop=ALL",               # 移除所有 Linux capabilities
+            "--no-new-privileges",          # 禁止透過 setuid/setgid 提權
+            "--security-opt=no-new-privileges:true",
+            "--user", "65534:65534",        # 以 nobody 身分執行
+            # === 環境變數清潔 ===
+            "--env-file", "/dev/null",      # 清空所有繼承的環境變數
         ]
         
         if self.docker_runtime:
@@ -96,11 +107,11 @@ class DockerSandbox(SandboxProvider):
             
         
         # 3. 準備容器內指令
-        # 如果有 sandbox_requirements.txt，就先安裝再執行
+        # 注意：--read-only 下 pip install 需要寫入 /tmp
         req_file_host = os.path.join(self.work_dir, "sandbox_requirements.txt")
         pip_cmd = ""
         if os.path.exists(req_file_host) and os.path.getsize(req_file_host) > 0:
-            pip_cmd = "pip install -r sandbox_requirements.txt > /dev/null 2>&1 && "
+            pip_cmd = "pip install --cache-dir=/tmp/pip-cache --target=/tmp/site-packages -r sandbox_requirements.txt > /dev/null 2>&1 && PYTHONPATH=/tmp/site-packages "
             
         # 4. 根據語言決定映像檔與執行指令
         if language == "python":

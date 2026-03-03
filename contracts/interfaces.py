@@ -128,9 +128,9 @@ class ToolCallResult:
 
 class SandboxType(enum.Enum):
     """沙盒類型"""
-    PYODIDE = "pyodide"      # WASM，本地瞬間
-    E2B = "e2b"              # 雲端 MicroVM
-    SUBPROCESS = "subprocess"  # 本地 subprocess (離線降級)
+    DOCKER = "docker"          # Docker 容器強隔離 (預設)
+    PYODIDE = "pyodide"        # WASM，本地瞬間
+    E2B = "e2b"                # 雲端 MicroVM
 
 
 @runtime_checkable
