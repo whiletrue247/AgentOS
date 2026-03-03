@@ -13,6 +13,11 @@ python-dotenv>=1.0.0
 # LLM Gateway
 litellm>=1.40
 
+# Observability & Tracing (Phase B)
+opentelemetry-api>=1.20
+opentelemetry-sdk>=1.20
+opentelemetry-exporter-otlp>=1.20
+
 # Multi-Agent Orchestration
 langgraph>=0.2
 

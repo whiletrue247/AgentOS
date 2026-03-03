@@ -16,6 +16,13 @@ import time
 from typing import Any, Optional
 
 try:
+    from opentelemetry import trace
+    from opentelemetry.trace import Status, StatusCode
+    OTEL_AVAILABLE = True
+except ImportError:
+    OTEL_AVAILABLE = False
+
+try:
     import litellm
     litellm.drop_params = True          # 自動丟棄不支援的參數
     litellm.set_verbose = False
@@ -59,6 +66,12 @@ class APIGateway:
 
         backend = "litellm" if LITELLM_AVAILABLE else "httpx-fallback"
         logger.info(f"🌐 API Gateway 啟動: {len(self._providers)} providers, backend={backend}, SmartRouter 就緒")
+        
+        if OTEL_AVAILABLE:
+            self._tracer = trace.get_tracer(__name__)
+            logger.info("🔭 OTLP Tracing 整合已啟用 (APIGateway)")
+        else:
+            self._tracer = None
 
     @staticmethod
     def _register_provider_keys(p: ProviderConfig) -> None:
@@ -250,11 +263,37 @@ class APIGateway:
         )
         self._call_history.append(record)
 
-        logger.info(
-            f"✅ [{provider.name}/{model}] via litellm ({elapsed_ms}ms, "
-            f"in:{input_tokens} out:{output_tokens})"
-        )
-        return result
+            logger.info(
+                f"✅ [{provider.name}/{model}] via litellm ({elapsed_ms}ms, "
+                f"in:{input_tokens} out:{output_tokens})"
+            )
+            return result
+            
+    async def _call_via_litellm(self, *args, **kwargs):
+        """帶有 OpenTelemetry 追蹤的 litellm 呼叫"""
+        if self._tracer:
+            with self._tracer.start_as_current_span(
+                "APIGateway.litellm_call",
+                attributes={
+                    "llm.provider": kwargs.get("provider", ProviderConfig(name="unknown")).name,
+                    "llm.model": kwargs.get("model", "unknown"),
+                    "llm.stream": kwargs.get("stream", False),
+                }
+            ) as span:
+                try:
+                    result = await self._do_call_via_litellm(*args, **kwargs)
+                    span.set_attribute("llm.usage.prompt_tokens", result.get("usage", {}).get("prompt_tokens", 0))
+                    span.set_attribute("llm.usage.completion_tokens", result.get("usage", {}).get("completion_tokens", 0))
+                    span.set_status(Status(StatusCode.OK))
+                    return result
+                except Exception as e:
+                    span.record_exception(e)
+                    span.set_status(Status(StatusCode.ERROR, str(e)))
+                    raise
+        else:
+            return await self._do_call_via_litellm(*args, **kwargs)
+
+    async def _do_call_via_litellm(
 
     # ----------------------------------------------------------
     # httpx fallback (當 litellm 未安裝時)

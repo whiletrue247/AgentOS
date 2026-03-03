@@ -27,7 +27,7 @@
 ### 🟡 Phase B: 企業級可觀測性與穩定性 (Observability & Stability)
 這部分旨在將測試覆蓋率從 30% 抬升至 70%，為「進入生產環境 (Production-Ready)」做準備。
 
-- [ ] **B.1 OpenTelemetry OTLP 整合**:  
+- [X] **B.1 OpenTelemetry OTLP 整合**:  
   **對策:** 在 `Engine.emit` 與 `APIGateway.call` 中埋設 OpenTelemetry Tracing Hooks，允許企業開發者無縫接入 Datadog, Prometheus, 或 Jaeger，實現完整的 Token、Cost 和時延追蹤。
 - [ ] **B.2 測試覆蓋率翻倍計畫 (Target: >70%)**:  
   **對策:** 補齊現有框架的測試漏洞，重點擴展 `test_a2a.py` (針對談判極端情境)、`test_smart_router` (針對多模型 Failover)。

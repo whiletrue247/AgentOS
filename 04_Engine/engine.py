@@ -20,7 +20,15 @@ import base64
 import os
 import subprocess
 import logging
+import json
 from typing import Any, Callable, Optional
+
+try:
+    from opentelemetry import trace
+    from opentelemetry.trace import Status, StatusCode
+    OTEL_AVAILABLE = True
+except ImportError:
+    OTEL_AVAILABLE = False
 
 from config_schema import AgentOSConfig
 from contracts.interfaces import (
@@ -102,6 +110,12 @@ class Engine:
         # Watchdog
         self._step_count = 0
 
+        if OTEL_AVAILABLE:
+            self._tracer = trace.get_tracer(__name__)
+            logger.info("🔭 OTLP Tracing 整合已啟用 (Engine)")
+        else:
+            self._tracer = None
+
         logger.info("🫀 Engine 初始化完成")
 
     # ========================================
@@ -144,13 +158,39 @@ class Engine:
     async def emit(self, event: EngineEvent) -> None:
         """發送事件到 Event Bus"""
         handlers = self._handlers.get(event.event_type, [])
-        for handler in handlers:
-            try:
-                result = handler(event)
-                if asyncio.iscoroutine(result):
-                    await result
-            except Exception as e:
-                logger.error(f"❌ Event handler error: {e}")
+        
+        async def _run_handlers():
+            for handler in handlers:
+                try:
+                    result = handler(event)
+                    if asyncio.iscoroutine(result):
+                        await result
+                except Exception as e:
+                    logger.error(f"❌ Event handler error: {e}")
+
+        if self._tracer:
+            with self._tracer.start_as_current_span(
+                f"Engine.emit:{event.event_type.name}",
+                attributes={
+                    "event.type": event.event_type.value,
+                    "event.source": event.source_agent,
+                    "event.timestamp": event.timestamp.isoformat(),
+                }
+            ) as span:
+                try:
+                    attr_payload = json.dumps(event.payload, ensure_ascii=False)
+                    if len(attr_payload) <= 4000:  # OpenTelemetry attr size restriction precaution
+                        span.set_attribute("event.payload", attr_payload)
+                    else:
+                        span.set_attribute("event.payload", attr_payload[:4000] + "...(truncated)")
+                        
+                    await _run_handlers()
+                    span.set_status(Status(StatusCode.OK))
+                except Exception as e:
+                    span.record_exception(e)
+                    span.set_status(Status(StatusCode.ERROR, str(e)))
+        else:
+            await _run_handlers()
 
     # ========================================
     # 核心 ReAct Loop
