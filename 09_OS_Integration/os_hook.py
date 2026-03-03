@@ -83,7 +83,19 @@ class Windows11Hook(BaseOSHook):
 
     async def inject_event(self, event_type: str, data: Any) -> bool:
         logger.debug(f"[Win11] Inject {event_type}: {data}")
-        # pywinauto or SendInput would go here
+        try:
+            if event_type == "type":
+                try:
+                    import pywinauto.keyboard
+                    pywinauto.keyboard.send_keys(str(data))
+                    return True
+                except ImportError:
+                    script = f"$wshell = New-Object -ComObject wscript.shell; $wshell.SendKeys('{data}')"
+                    subprocess.run(["powershell", "-Command", script], check=True, timeout=3)
+                    return True
+        except Exception as e:
+            logger.error(f"Windows event injection failed: {e}")
+            return False
         return True
 
 
@@ -149,7 +161,17 @@ class MacOSSequoiaHook(BaseOSHook):
 
     async def inject_event(self, event_type: str, data: Any) -> bool:
         logger.debug(f"[macOS] Inject {event_type}: {data}")
-        # CGEventCreateKeyboardEvent / CGEventCreateMouseEvent
+        try:
+            if event_type == "type":
+                safe_data = str(data).replace('"', '\\"')
+                subprocess.run(
+                    ["osascript", "-e", f'tell application "System Events" to keystroke "{safe_data}"'],
+                    check=True, timeout=3
+                )
+                return True
+        except Exception as e:
+            logger.error(f"macOS event injection failed: {e}")
+            return False
         return True
 
 
@@ -204,6 +226,37 @@ class WaylandHook(BaseOSHook):
             except Exception:
                 pass
 
+        # 嘗試使用 dbus (GNOME/KDE)
+        try:
+            import dbus
+            bus = dbus.SessionBus()
+            # GNOME Shell implementation (sometimes restricted in newer GNOME versions without extensions)
+            try:
+                gnome_proxy = bus.get_object('org.gnome.Shell', '/org/gnome/Shell')
+                gnome_iface = dbus.Interface(gnome_proxy, 'org.gnome.Shell')
+                # Evaluation of a simple javascript payload to get active window
+                eval_script = """
+                global.display.get_focus_window() ? global.display.get_focus_window().get_title() : ''
+                """
+                title, success = gnome_iface.Eval(eval_script)
+                if success and title:
+                    return {"title": str(title), "source": "dbus-gnome"}
+            except Exception:
+                pass
+                
+            # KDE Plasma implementation
+            try:
+                plasma_proxy = bus.get_object('org.kde.KWin', '/KWin')
+                plasma_iface = dbus.Interface(plasma_proxy, 'org.kde.KWin')
+                # ActiveWindow is a property
+                title = plasma_iface.Get('org.kde.KWin', 'activeWindow', dbus_interface='org.freedesktop.DBus.Properties')
+                if title:
+                    return {"title": str(title), "source": "dbus-kde"}
+            except Exception:
+                pass
+        except ImportError:
+            pass
+
         # X11 fallback
         try:
             result = subprocess.run(
@@ -226,6 +279,15 @@ class WaylandHook(BaseOSHook):
 
     async def inject_event(self, event_type: str, data: Any) -> bool:
         logger.debug(f"[Linux] Inject {event_type}: {data}")
+        try:
+            if event_type == "type":
+                # Fallback to ydotool (Wayland) or xdotool (X11)
+                cmd = ["xdotool", "type", str(data)] if self._compositor == "x11" else ["ydotool", "type", str(data)]
+                subprocess.run(cmd, check=True)
+                return True
+        except Exception as e:
+            logger.error(f"Linux event injection failed: {e}")
+            return False
         return True
 
     @staticmethod
