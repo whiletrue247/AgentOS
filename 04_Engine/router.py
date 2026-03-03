@@ -107,15 +107,14 @@ class SmartRouter:
         if not LITELLM_MODEL_COST:
             return 0.0
 
-        # litellm model key 格式 (嘗試多種組合)
         candidates = [
             model,
             f"{provider_name}/{model}",
+            model.replace(f"{provider_name}/", "")
         ]
         for key in candidates:
             if key in LITELLM_MODEL_COST:
                 info = LITELLM_MODEL_COST[key]
-                # 取 input_cost_per_token 作為主要指標
                 return info.get("input_cost_per_token", 0) * 1000
         return 0.0
 
@@ -133,20 +132,35 @@ class SmartRouter:
         # 從 capabilities 中找最便宜的 cloud 模型候選
         cheap_models = self.capabilities.get("roles", {}).get("writer", [])
         if cheap_models:
-            logger.warning(f"💸 Budget approaching limit! Downgrading to {cheap_models[0]}")
+            logger.warning(f"💸 Budget approaching limit! Downgrading '{current_model}' to '{cheap_models[0]}'")
             return cheap_models[0]
         return None
 
     def record_cost(self, input_tokens: int, output_tokens: int, model: str):
-        """由 Gateway 呼叫，記錄本次 API 的消耗。"""
+        """由 Gateway 呼叫，記錄本次 API 的消耗。支援 litellm response.usage 整合"""
         if not LITELLM_MODEL_COST:
             return
-        info = LITELLM_MODEL_COST.get(model, {})
-        cost = (
-            input_tokens * info.get("input_cost_per_token", 0)
-            + output_tokens * info.get("output_cost_per_token", 0)
-        )
-        self._session_cost_usd += cost
+            
+        cost = 0.0
+        try:
+            # 這裡簡化為字典查找，因為 model name 有可能需要 mapping
+            model_key = model
+            for k in LITELLM_MODEL_COST.keys():
+                if model.endswith(k) or k.endswith(model):
+                    model_key = k
+                    break
+            
+            info = LITELLM_MODEL_COST.get(model_key, {})
+            cost = (
+                input_tokens * info.get("input_cost_per_token", 0)
+                + output_tokens * info.get("output_cost_per_token", 0)
+            )
+        except Exception as e:
+            logger.debug(f"Litellm cost tracking failed: {e}")
+            
+        if cost > 0:
+            self._session_cost_usd += cost
+            logger.debug(f"💰 Session cost updated +${cost:.4f} (Total: ${self._session_cost_usd:.4f})")
 
     # ----------------------------------------------------------
     # 主路由邏輯
