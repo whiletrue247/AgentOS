@@ -35,10 +35,20 @@ class DesktopRuntime:
     實現 2026 Agentic Computer Use 標準的底層封裝。
     """
 
-    def __init__(self):
+    def __init__(self, require_approval: bool = False):
         self.os_type = platform.system()
+        self.require_approval = require_approval
+        self.preview_ui = None
+        if self.require_approval:
+            try:
+                from .human_preview import HumanPreviewUI
+                self.preview_ui = HumanPreviewUI()
+            except ImportError:
+                from human_preview import HumanPreviewUI
+                self.preview_ui = HumanPreviewUI()
+        
         backend = "pyautogui" if PYAUTOGUI_AVAILABLE else "mock"
-        logger.info(f"🖥️ DesktopRuntime: os={self.os_type}, backend={backend}")
+        logger.info(f"🖥️ DesktopRuntime: os={self.os_type}, backend={backend}, approval={require_approval}")
 
     # ----------------------------------------------------------
     # Screenshot
@@ -69,6 +79,10 @@ class DesktopRuntime:
     # ----------------------------------------------------------
     def click(self, x: int, y: int, button: str = "left"):
         """跨平台座標點擊"""
+        if self.preview_ui and not self.preview_ui.request_approval("Mouse Click", f"({x}, {y}) Button: {button}"):
+            logger.warning(f"🚫 拒絕 Click: {button} at ({x}, {y})")
+            return
+            
         if PYAUTOGUI_AVAILABLE:
             pyautogui.click(x=x, y=y, button=button)
             logger.info(f"🖱️ Clicked: {button} at ({x}, {y})")
@@ -77,6 +91,10 @@ class DesktopRuntime:
 
     def double_click(self, x: int, y: int):
         """雙擊"""
+        if self.preview_ui and not self.preview_ui.request_approval("Mouse Double Click", f"({x}, {y})"):
+            logger.warning(f"🚫 拒絕 Double Click: ({x}, {y})")
+            return
+            
         if PYAUTOGUI_AVAILABLE:
             pyautogui.doubleClick(x=x, y=y)
             logger.info(f"🖱️ Double-clicked at ({x}, {y})")
@@ -85,6 +103,12 @@ class DesktopRuntime:
 
     def scroll(self, clicks: int, x: Optional[int] = None, y: Optional[int] = None):
         """滾輪"""
+        x_str = x if x is not None else "current"
+        y_str = y if y is not None else "current"
+        if self.preview_ui and not self.preview_ui.request_approval("Mouse Scroll", f"Clicks: {clicks} at ({x_str}, {y_str})"):
+            logger.warning(f"🚫 拒絕 Scroll: {clicks} clicks")
+            return
+            
         if PYAUTOGUI_AVAILABLE:
             pyautogui.scroll(clicks, x=x, y=y)
             logger.info(f"🖱️ Scrolled {clicks} clicks")
@@ -96,6 +120,10 @@ class DesktopRuntime:
     # ----------------------------------------------------------
     def type_text(self, text: str, interval: float = 0.02):
         """模擬鍵盤輸入文字"""
+        if self.preview_ui and not self.preview_ui.request_approval("Keyboard Typing", f"Text: '{text}'"):
+            logger.warning(f"🚫 拒絕 Typing: {text}")
+            return
+            
         if PYAUTOGUI_AVAILABLE:
             pyautogui.write(text, interval=interval)
             logger.info(f"⌨️ Typed: {text[:20]}...")
@@ -104,12 +132,16 @@ class DesktopRuntime:
 
     def press_key(self, key_name: str, modifiers: Optional[list] = None):
         """模擬按下快捷鍵 (如 enter, escape, cmd+c)"""
+        mod_str = "+".join(modifiers) + "+" if modifiers else ""
+        if self.preview_ui and not self.preview_ui.request_approval("Keyboard Press", f"Key: {mod_str}{key_name}"):
+            logger.warning(f"🚫 拒絕 Press: {mod_str}{key_name}")
+            return
+            
         if PYAUTOGUI_AVAILABLE:
             if modifiers:
                 pyautogui.hotkey(*modifiers, key_name)
             else:
                 pyautogui.press(key_name)
-            mod_str = "+".join(modifiers) + "+" if modifiers else ""
             logger.info(f"⌨️ Pressed: {mod_str}{key_name}")
         else:
             mod_str = "+".join(modifiers) + "+" if modifiers else ""
