@@ -104,6 +104,8 @@ class ToolSchema:
     install_type: str = "schema_only"  # "schema_only" | "local_plugin" | "system_package"
     requires_network: bool = False
     mcp_server: Optional[str] = None  # MCP Server URL (Schema-only 類型使用)
+    mcp_original_name: Optional[str] = None  # 紀錄原本外部 MCP 提供的 name
+
 
 
 @dataclass

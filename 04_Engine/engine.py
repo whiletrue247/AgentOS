@@ -285,11 +285,20 @@ class Engine:
                     # 特殊系統工具攔截：SYS_TAKE_SCREENSHOT
                     # ==================================
                     if tool_name == "SYS_TAKE_SCREENSHOT":
+                        import tempfile
                         logger.info("📸 執行原生截圖...")
+                        logger.warning("⚠️ PRIVACY CHECK: Agent is capturing the screen. Ensure no sensitive information is visible.")
                         try:
-                            # 優先使用 macOS native screencapture (較快且免依賴)
-                            tmp_path = "/tmp/agentos_screenshot.png"
-                            subprocess.run(["screencapture", "-x", "-C", tmp_path], check=True)
+                            # 使用 tempfile 避免 Race Condition (Risk 3.3)
+                            fd, tmp_path = tempfile.mkstemp(suffix=".jpg")
+                            os.close(fd)
+                            
+                            # macOS native screencapture (Risk 3.6: Multi-Monitor -> use -m for main only)
+                            subprocess.run(["screencapture", "-x", "-m", "-t", "jpg", tmp_path], check=True, stderr=subprocess.DEVNULL)
+                            
+                            # 安全降維與壓縮: macOS sips 工具 (Risk 3.2: Base64 Context Explosion)
+                            # 限制最大邊長 1280px，JPEG 品質 60
+                            subprocess.run(["sips", "-Z", "1280", "-s", "formatOptions", "60", tmp_path], check=True, stdout=subprocess.DEVNULL)
                             
                             with open(tmp_path, "rb") as img_file:
                                 b64_img = base64.b64encode(img_file.read()).decode('utf-8')
@@ -301,11 +310,11 @@ class Engine:
                                 "role": "tool",
                                 "tool_call_id": tc.get("id", ""),
                                 "content": [
-                                    {"type": "text", "text": "Screenshot captured successfully."},
+                                    {"type": "text", "text": "Screenshot captured successfully (compressed to 1280px)."},
                                     {
                                         "type": "image_url",
                                         "image_url": {
-                                            "url": f"data:image/png;base64,{b64_img}"
+                                            "url": f"data:image/jpeg;base64,{b64_img}"
                                         }
                                     }
                                 ]
@@ -318,18 +327,18 @@ class Engine:
                             continue # 直接進入下一輪 LLM
                         except Exception as e:
                             logger.error(f"❌ 截圖失敗: {e} - 降級提供一空白圖片 (Headless mode)")
-                            # 1x1 像素的透明 PNG Base64 作為 Fallback
-                            b64_img = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
+                            # 1x1 像素的透明 PNG Base64 作為 Fallback (Headless mode)
+                            b64_dummy = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
                             
                             messages.append({
                                 "role": "tool",
                                 "tool_call_id": tc.get("id", ""),
                                 "content": [
-                                    {"type": "text", "text": f"Screenshot failed (Headless). Fallback dummy image provided. Error: {e}"},
+                                    {"type": "text", "text": f"Screenshot failed (Headless or Missing Tools). Fallback dummy image provided. Error: {e}"},
                                     {
                                         "type": "image_url",
                                         "image_url": {
-                                            "url": f"data:image/png;base64,{b64_img}"
+                                            "url": f"data:image/png;base64,{b64_dummy}"
                                         }
                                     }
                                 ]

@@ -32,9 +32,17 @@ class MCPClient:
 
     async def start(self) -> bool:
         """啟動外部 MCP Subprocess，透過 stdio 建立通訊"""
-        env = os.environ.copy()
+        # 實作「零信任環境變數」注入，僅保留最低限度系統變數
+        safe_env_keys = {"PATH", "USER", "HOME", "SHELL", "LANG"}
+        env = {k: v for k, v in os.environ.items() if k in safe_env_keys}
         if self.config.env:
             env.update(self.config.env)
+
+        # 檢驗 Command Injection 白名單
+        allowed_commands = {"npx", "node", "python", "python3", "uvx", "docker"}
+        if self.config.command not in allowed_commands:
+            logger.error(f"❌ 啟動 MCP Server 失敗: 命令 '{self.config.command}' 不在安全白名單內")
+            return False
 
         cmd = [self.config.command] + self.config.args
         cmd_str = " ".join(cmd)
@@ -44,9 +52,13 @@ class MCPClient:
                 *cmd,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL, # 隱藏 Server 的 Debug LOG
-                env=env
+                stderr=asyncio.subprocess.PIPE, # 改用 PIPE 讀取 stderr 以便除錯
+                env=env,
+                limit=1024 * 1024 * 10  # 10MB 單行 JSON 讀取上限，預防 OOM JSON Bomb
             )
+            
+            # 建立背景記錄 stderr task
+            asyncio.create_task(self._read_stderr_loop())
             
             # 建立背景讀取 Task
             self._reader_task = asyncio.create_task(self._read_loop())
@@ -79,13 +91,16 @@ class MCPClient:
             
             schemas = []
             for t in tools:
+                # 加上 namespace prefix 避免工具名稱衝突
+                safe_name = f"{self.name}_{t['name']}".replace("-", "_")
                 schema = ToolSchema(
-                    name=t["name"],
+                    name=safe_name,
                     description=t.get("description", f"MCP Tool from {self.name}"),
                     parameters=t.get("inputSchema", {"type": "object", "properties": {}}),
                     install_type="mcp",
                     requires_network=True,
-                    mcp_server=self.name
+                    mcp_server=self.name,
+                    mcp_original_name=t["name"]  # 保留原始名稱以便呼叫
                 )
                 schemas.append(schema)
                 
@@ -97,8 +112,14 @@ class MCPClient:
     async def call_tool(self, tool_name: str, arguments: dict) -> str:
         """請求 MCP Server 執行外部工具"""
         try:
+            # 去除 namespace prefix 還原原始工具名稱
+            original_name = tool_name
+            prefix = f"{self.name}_"
+            if original_name.startswith(prefix):
+                original_name = original_name[len(prefix):]
+                
             res = await self._send_request("tools/call", {
-                "name": tool_name,
+                "name": original_name,
                 "arguments": arguments
             })
             
@@ -153,7 +174,12 @@ class MCPClient:
             self._process.stdin.write(data.encode('utf-8'))
             await self._process.stdin.drain()
         
-        return await future
+        try:
+            # 加入 30 秒超時機制防止 Deadlock
+            return await asyncio.wait_for(future, timeout=30.0)
+        except asyncio.TimeoutError:
+            self._pending_requests.pop(msg_id, None)
+            raise RuntimeError(f"MCP _send_request ({method}) timed out after 30s")
 
     async def _send_notification(self, method: str, params: dict):
         payload = {
@@ -192,3 +218,14 @@ class MCPClient:
                 break
             except Exception as e:
                 logger.debug(f"⚠️ 解析 MCP stdout 錯誤 (可能是 debug text): {e}")
+
+    async def _read_stderr_loop(self):
+        """背景記錄 MCP stderr，不丟棄除錯資訊"""
+        while self._process and self._process.stderr:
+            try:
+                line = await self._process.stderr.readline()
+                if not line:
+                    break
+                logger.debug(f"[MCP {self.name} LOG] {line.decode('utf-8', errors='ignore').strip()}")
+            except Exception:
+                break

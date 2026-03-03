@@ -140,6 +140,10 @@ class APIGateway:
         發送 LLM API 請求，含自動重試與離線 failover。
         優先使用 litellm；若 litellm 不可用則退回 httpx fallback。
         """
+        # 防止 **kwargs 覆寫高危參數
+        for key in ["api_key", "api_base", "base_url", "organization"]:
+            kwargs.pop(key, None)
+
         retry_cfg = self.config.engine.retry
         last_error: Optional[Exception] = None
 
