@@ -25,8 +25,11 @@ AgentOS — main.py
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import sqlite3
 import sys
+from pathlib import Path
 
 # ============================================================
 # Logging
@@ -37,6 +40,55 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("AgentOS")
+
+
+# ============================================================
+# Conversation Persistence (SQLite)
+# ============================================================
+_CONV_DB_PATH = Path("data/conversation_history.db")
+
+
+def _init_conversation_db() -> None:
+    """初始化對話歷史資料庫"""
+    _CONV_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(str(_CONV_DB_PATH)) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                timestamp REAL NOT NULL DEFAULT (strftime('%s','now'))
+            )
+        """)
+        conn.commit()
+
+
+def _load_conversation_history() -> list[dict]:
+    """從 SQLite 載入對話歷史"""
+    if not _CONV_DB_PATH.exists():
+        return []
+    with sqlite3.connect(str(_CONV_DB_PATH)) as conn:
+        rows = conn.execute(
+            "SELECT role, content FROM history ORDER BY id"
+        ).fetchall()
+    return [{"role": r, "content": c} for r, c in rows]
+
+
+def _append_conversation(role: str, content: str) -> None:
+    """追加一筆對話紀錄"""
+    with sqlite3.connect(str(_CONV_DB_PATH)) as conn:
+        conn.execute(
+            "INSERT INTO history (role, content) VALUES (?, ?)",
+            (role, content),
+        )
+        conn.commit()
+
+
+def _clear_conversation_history() -> None:
+    """清除對話歷史"""
+    with sqlite3.connect(str(_CONV_DB_PATH)) as conn:
+        conn.execute("DELETE FROM history")
+        conn.commit()
 
 
 async def boot() -> None:
@@ -105,6 +157,9 @@ async def boot() -> None:
         
     sandbox_manager = sandbox_module.SandboxManager(config=config, provider=sandbox_provider)
     truncator = truncator_mod.Truncator(config=config)
+
+    # 對話歷史持久化初始化
+    _init_conversation_db()
 
     logger.info(f"✅ 工具系統已啟動 ({len(tool_catalog.get_all_tools())} 工具)")
 
@@ -194,7 +249,10 @@ async def boot() -> None:
         print("🤖 AgentOS 已就緒！請輸入您的指令：")
         print("=" * 50 + "\n")
 
-        conversation_history: list[dict] = []
+        # 從 SQLite 載入上次的對話歷史
+        conversation_history = _load_conversation_history()
+        if conversation_history:
+            logger.info(f"📂 已恢復 {len(conversation_history)} 筆對話歷史")
 
         while True:
             try:
@@ -207,6 +265,7 @@ async def boot() -> None:
 
             if user_input.strip().lower() == "/clear":
                 conversation_history.clear()
+                _clear_conversation_history()
                 print("🧹 對話歷史已清除。\n")
                 continue
 
@@ -222,6 +281,9 @@ async def boot() -> None:
                 print(f"\n{budget_msg}\n")
                 continue
 
+            # 持久化使用者訊息
+            _append_conversation("user", user_input)
+
             # 呼叫 Engine
             print()
             reply = await engine.handle_message(
@@ -230,17 +292,42 @@ async def boot() -> None:
                 conversation_history=conversation_history,
             )
 
+            # 持久化 Agent 回覆
+            _append_conversation("assistant", reply)
+
             # 同步 Cost Guard
             cost_guard.record_from_gateway(gateway)
 
             print(f"\n🤖 Agent > {reply}\n")
     else:
         logger.info("✅ 系統已將 Telegram 置於背景運行。按 Ctrl+C 結束。")
-        while True:
-            await asyncio.sleep(3600)
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            pass
 
-    # ── Shutdown ────────────────────────────────────
-    cost_guard.save()
+
+async def _shutdown(
+    cost_guard=None,
+    sandbox_manager=None,
+    sandbox_provider=None,
+):
+    """Graceful shutdown: 確保所有資源釋放"""
+    if cost_guard:
+        try:
+            cost_guard.save()
+            logger.info("💾 Cost Guard 已保存")
+        except Exception as e:
+            logger.error(f"❌ Cost Guard 保存失敗: {e}")
+
+    if sandbox_provider:
+        try:
+            await sandbox_provider.cleanup()
+            logger.info("🧹 Sandbox 已清理")
+        except Exception as e:
+            logger.error(f"❌ Sandbox 清理失敗: {e}")
+
     logger.info("👋 AgentOS 已關閉。")
 
 
@@ -249,6 +336,8 @@ def main():
         asyncio.run(boot())
     except KeyboardInterrupt:
         logger.info("👋 收到 Ctrl+C，AgentOS 關閉。")
+    except asyncio.CancelledError:
+        logger.info("👋 收到取消信號，AgentOS 關閉。")
 
 
 if __name__ == "__main__":
