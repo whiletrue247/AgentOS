@@ -21,6 +21,20 @@ try:
 except ImportError:
     from knowledge_graph import PersonalKnowledgeGraph
 
+# 嘗試動態載入 Mem0Provider
+try:
+    import importlib.util
+    import sys
+    import os
+    mem0_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../02_Memory_Context/mem0_provider.py"))
+    spec = importlib.util.spec_from_file_location("mem0_provider", mem0_path)
+    mem0_module = importlib.util.module_from_spec(spec)
+    sys.modules["mem0_provider"] = mem0_module
+    spec.loader.exec_module(mem0_module)
+    Mem0Provider = getattr(mem0_module, "Mem0Provider", None)
+except Exception:
+    Mem0Provider = None
+
 
 class GraphRAG:
     """
@@ -31,7 +45,8 @@ class GraphRAG:
     def __init__(self, engine: Any, graph: PersonalKnowledgeGraph):
         self.engine = engine
         self.graph = graph
-        logger.info("🧠 GraphRAG 混合聯想引擎初始化完成")
+        self.mem0 = Mem0Provider() if Mem0Provider else None
+        logger.info(f"🧠 GraphRAG 混合聯想引擎初始化完成 (Mem0 Available: {bool(self.mem0)})")
 
     # ----------------------------------------------------------
     # 知識攝入 (Ingest)
@@ -78,6 +93,10 @@ Text to analyze:
             for s, p, o in triplets:
                 self.graph.add_triple(s, p, o, source="graphrag_extraction")
 
+            # 雙寫：同時存入 Mem0 向量記憶 (If available)
+            if self.mem0:
+                self.mem0.add_memory(session_text)
+
             logger.info(f"✅ 抽取並存入 {len(triplets)} 條知識三元組")
             return len(triplets)
 
@@ -116,7 +135,14 @@ Text to analyze:
             context_lines.append(f"  - {s} → {p} → {o}")
 
         graph_str = "\n".join(context_lines)
-        logger.info(f"💡 召回 {len(subgraph)} 條知識事實")
+        
+        # Step 4: 合併 Mem0 Vector 記憶 (Hybrid Search)
+        if self.mem0:
+            mem0_str = self.mem0.search_memory(query)
+            if mem0_str:
+                graph_str += "\n" + mem0_str
+
+        logger.info(f"💡 召回 {len(subgraph)} 條知識事實 (Hybrid Mode: {bool(self.mem0)})")
         return graph_str
 
     # ----------------------------------------------------------
