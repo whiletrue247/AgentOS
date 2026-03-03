@@ -141,6 +141,40 @@
 
 ---
 
+## Phase F: 測試覆蓋補強
+
+### Task F-1: Core Module Unit Tests
+- **Commit**: `d9450b0` 🧪 test: core module unit tests (router, npu, zero_trust, cost)
+- **改動**:
+  - 新增 `tests/test_core.py` (148 行)
+- **實作細節**:
+  - 使用動態導入 (`importlib.util`) 解決模組名稱數字開頭的問題。
+  - 補齊 `NPUDetector` 回傳之 `HardwareProfile` 的邊界檢查驗證。
+  - 實作 `SmartRouter` 離線強刷模式、任務複雜度分發邏輯及預算爆表時替換 cheaper alternative 的邏輯測試。
+  - 對 `ZeroTrustInterceptor` 實施模擬標準輸入無回覆測試 (mock stdin cancellation)，確保 `rm -rf /` 在沒有人把關時無法執行。
+
+### Task F-2: KG + Decay Tests
+- **Commit**: `e89ac36` 🧪 test: knowledge graph + decay scheduler tests
+- **改動**:
+  - 新增 `tests/test_kg.py` (109 行)
+- **實作細節**:
+  - 使用 NetworkX 降級模式，獨立進行 KG `add_triple` 及 `get_subgraph` 的圖論結構測試，無須依賴伺服器。
+  - 直接控制 `networkx` 圖中 `last_accessed` 變數完成時間旅行，印證 `decay` 衰減公式 `weight * (0.5 ^ (days / half_life))` 可正確過濾出舊實體並予以清除。
+  - 實施 `test_stats` 確保數量計算無誤，以及 `test_decay_keeps_recent` 確認不到清除閾值的 Edge 被順利保留。
+
+### Task F-3: Sandbox Security Tests
+- **Commit**: `d6a1eb7` 🧪 test: sandbox security hardening verification
+- **改動**:
+  - 新增 `tests/test_security.py` (80 行)
+- **實作細節**:
+  - `test_static_block`: 確保包含 `rm -rf /` 首層攔截不會啟動 Subprocess。
+  - `test_env_stripping`: 測試 `OPENAI_API_KEY` 等高風險變數在被 `_build_secure_env()` 處理後會被強制抹除。
+  - `test_path_sanitization`: 測試 `/sbin` 等高權限系統路徑會在建構 Sandbox 環境時過濾剝離。
+  - `test_network_deny`: 成功驗證當 `network_allowed=False` 參數啟動時，對 Proxy 注入 HTTP 阻斷 (127.0.0.1:1)。
+  - `test_timeout_kills_process`: 在非同步 Sandbox 中利用 sleep 腳本測試 Timeout 機制確實能提早斬斷 Process Tree。
+
+---
+
 ## ✅ 總結 (All Tasks Completed)
 
 所有在 `GEMINI_TASKS.md` 中規劃的 **Phase A 到 Phase D** 已全數由 GEMINI SOTA 代碼實作完成，每一階段皆通過 `pyflakes` 靜態語法分析以及 `pytest` 端對端自動化測試。所有類別與方法皆實作完備的 Type Hints 及 Docstrings，並且不使用 `mock/sleep` 等假實作，為 **AgentOS v5.0** 奠定了具備「全端攔截、安全評估、模型路由及接力傳輸」能力的堅實基礎！
