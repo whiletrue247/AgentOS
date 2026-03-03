@@ -135,27 +135,52 @@ async def boot() -> None:
             logger.warning(w)
         logger.info("✅ Config 已載入")
 
-        # ── Step 2: 靈魂載入 (01_Kernel) ────────────────
+        # 定義嚴謹的模組白名單 (防止 RCE 路徑穿越)
+        ALLOWED_MODULES = {
+            "01_Kernel.kernel",
+            "02_Memory.memory_manager",
+            "02_Memory.providers.sqlite",
+            "03_Tool_System.catalog",
+            "03_Tool_System.sys_tools",
+            "03_Tool_System.sandbox",
+            "03_Tool_System.sandbox_docker",
+            "03_Tool_System.truncator",
+            "04_Engine.engine",
+            "04_Engine.gateway",
+            "04_Engine.rate_limiter",
+            "04_Engine.cost_guard",
+            "04_Engine.state_machine",
+            "08_Platform.messenger_telegram"
+        }
+        
         from importlib import import_module
-        kernel_mod = import_module("01_Kernel.kernel")
+        def _safe_import(module_name: str):
+            """白名單檢查的安全 Import 函數"""
+            if module_name not in ALLOWED_MODULES:
+                logger.critical(f"🚨 安全攔截：嘗試動態載入未經授權的模組: {module_name}")
+                raise ImportError(f"Unauthorized module load: {module_name}")
+            return import_module(module_name)
+
+        # ── Step 2: 靈魂載入 (01_Kernel) ────────────────
+        kernel_mod = _safe_import("01_Kernel.kernel")
         kernel = kernel_mod.Kernel(config.kernel)
         soul_content = kernel.load_soul()
         logger.info(f"✅ SOUL 已載入 ({len(soul_content)} chars)")
 
         # ── Step 3: 記憶系統 (02_Memory) ────────────────
-        memory_mod = import_module("02_Memory.memory_manager")
-        sqlite_mod = import_module("02_Memory.providers.sqlite")
+        memory_mod = _safe_import("02_Memory.memory_manager")
+        sqlite_mod = _safe_import("02_Memory.providers.sqlite")
 
         sqlite_provider = sqlite_mod.SQLiteMemoryProvider()
         memory_manager = memory_mod.MemoryManager(provider=sqlite_provider)
         logger.info("✅ Memory 已啟動 (SQLite)")
 
         # ── Step 4: 工具系統 (03_Tool_System) ───────────
-        catalog_mod = import_module("03_Tool_System.catalog")
-        sys_tools_mod = import_module("03_Tool_System.sys_tools")
-        sandbox_module = import_module("03_Tool_System.sandbox")
-        docker_mod = import_module("03_Tool_System.sandbox_docker")
-        truncator_mod = import_module("03_Tool_System.truncator")
+        catalog_mod = _safe_import("03_Tool_System.catalog")
+        sys_tools_mod = _safe_import("03_Tool_System.sys_tools")
+        sandbox_module = _safe_import("03_Tool_System.sandbox")
+        docker_mod = _safe_import("03_Tool_System.sandbox_docker")
+        truncator_mod = _safe_import("03_Tool_System.truncator")
 
         tool_catalog = catalog_mod.ToolCatalog(config=config)
         sys_tools_mod.register_system_tools(tool_catalog)
@@ -191,11 +216,11 @@ async def boot() -> None:
         logger.info(f"✅ 工具系統已啟動 ({len(tool_catalog.get_all_tools())} 工具)")
 
         # ── Step 5: 引擎核心 (04_Engine) ────────────────
-        engine_mod = import_module("04_Engine.engine")
-        gateway_mod = import_module("04_Engine.gateway")
-        rate_mod = import_module("04_Engine.rate_limiter")
-        cost_mod = import_module("04_Engine.cost_guard")
-        state_mod = import_module("04_Engine.state_machine")
+        engine_mod = _safe_import("04_Engine.engine")
+        gateway_mod = _safe_import("04_Engine.gateway")
+        rate_mod = _safe_import("04_Engine.rate_limiter")
+        cost_mod = _safe_import("04_Engine.cost_guard")
+        state_mod = _safe_import("04_Engine.state_machine")
 
         gateway = gateway_mod.APIGateway(config)
         rate_limiter = rate_mod.RateLimiter(
@@ -280,7 +305,7 @@ async def boot() -> None:
 
         if not use_terminal and config.messenger.telegram.bot_token:
             try:
-                tg_mod = import_module("08_Platform.messenger_telegram")
+                tg_mod = _safe_import("08_Platform.messenger_telegram")
                 tg_bot = tg_mod.TelegramMessenger(config=config, engine=engine)
                 await tg_bot.start()
                 logger.info("✅ Telegram Bot 已啟動")

@@ -10,7 +10,15 @@ import asyncio
 import json
 import logging
 import secrets
+import os
+import hashlib
 from pathlib import Path
+
+try:
+    import keyring
+    KEYRING_AVAILABLE = True
+except ImportError:
+    KEYRING_AVAILABLE = False
 
 from aiohttp import web
 from config_schema import AgentOSConfig
@@ -52,8 +60,7 @@ class DashboardServer:
         self.cost_guard = cost_guard
         self.event_trace = event_trace  # EventTrace 實例 (Observability 2.0)
         
-        # 產生一次性 Admin Token
-        self.admin_token = secrets.token_urlsafe(16)
+        self.admin_token = self._ensure_admin_token()
         
         self.app = web.Application(middlewares=[auth_middleware])
         self.app["dashboard_server"] = self  # 讓 middleware 可以存取 server 實例
@@ -64,6 +71,47 @@ class DashboardServer:
         
         # 訂閱全域 Engine 事件以廣播到前端
         self._subscribe_events()
+
+    def _ensure_admin_token(self) -> str:
+        """從 Keyring (.env 回退) 取得 Token，若無則生成並存儲"""
+        service_id = "AgentOS_Dashboard"
+        user_id = "admin_token"
+        
+        # 1. 嘗試從 OS Keyring 獲取
+        if KEYRING_AVAILABLE:
+            try:
+                token = keyring.get_password(service_id, user_id)
+                if token:
+                    return token
+            except Exception as e:
+                logger.debug(f"Keyring read failed: {e}")
+                
+        # 2. 回退到 .env 或本機雜湊文件
+        env_path = Path(__file__).resolve().parent.parent.parent / ".env_dashboard"
+        if env_path.exists():
+            try:
+                return env_path.read_text(encoding="utf-8").strip()
+            except Exception:
+                pass
+                
+        # 若都沒有，生成新 Token
+        new_token = secrets.token_urlsafe(16)
+        
+        if KEYRING_AVAILABLE:
+            try:
+                keyring.set_password(service_id, user_id, new_token)
+                return new_token
+            except Exception as e:
+                logger.debug(f"Keyring write failed: {e}")
+                
+        # 若 keyring 失敗，寫入 env 檔
+        try:
+            env_path.write_text(new_token, encoding="utf-8")
+            os.chmod(env_path, 0o600)
+        except Exception as e:
+            logger.warning(f"Failed to persist dashboard token: {e}")
+            
+        return new_token
 
     def _setup_routes(self) -> None:
         """設定 API 與靜態檔案路由"""
@@ -240,8 +288,8 @@ class DashboardServer:
         site = web.TCPSite(runner, '0.0.0.0', port)
         await site.start()
         logger.info(f"🌐 Dashboard 已啟動於 http://localhost:{port}")
-        logger.info(f"🔑 Dashboard Access Token: {self.admin_token}")
-        print(f"\n[Dashboard Auth] 您的本機面板存取 Token 為: {self.admin_token}\n")
+        # 安全優化：不再於日誌中明文寫出 Token
+        print(f"\n[Dashboard Auth] 您的本機面板存取 Token 已啟用: {self.admin_token}\n")
 
     async def stop(self) -> None:
         """停止 Web Server 確保優雅關閉"""

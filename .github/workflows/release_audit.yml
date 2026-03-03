@@ -1,0 +1,66 @@
+name: Release Security Audit
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  id-token: write  # SLSA / sigstore 必須
+  packages: write
+
+jobs:
+  supply_chain_security:
+    name: Generate Provenance and Signatures
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Python environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build sysv_ipc
+          
+      - name: Build Source Distribution and Wheel
+        run: python -m build
+          
+      - name: Generate SBOM (Software Bill of Materials)
+        uses: anchore/sbom-action@v0
+        with:
+          format: spdx-json
+          output-file: agent_os_sbom.spdx.json
+          
+      - name: Upload SBOM to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: agent_os_sbom.spdx.json
+          
+      - name: Set up Cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.2.0'
+          
+      - name: Sign Source Assets 
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          sha256sum dist/* > checksums.txt
+          cosign sign-blob --yes checksums.txt --bundle checksums.txt.bundle
+          cosign sign-blob --yes agent_os_sbom.spdx.json --bundle agent_os_sbom.spdx.json.bundle
+          
+      - name: Upload Signed Artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            checksums.txt
+            checksums.txt.bundle
+            agent_os_sbom.spdx.json.bundle
