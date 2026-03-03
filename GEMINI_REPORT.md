@@ -91,3 +91,17 @@
   - macOS: 實作 `osascript` 的 `System Events` 來達到 `inject_event` (取代空殼 mock)
   - Linux: 針對 `get_active_window` 擴增 `dbus` 連接對象 (支援 GNOME 與 KDE Plasma API)，補齊 Wayland `hyprctl`/`swaymsg` 外的覆蓋率
   - 確保不具備套件或權限不足時能優雅地 fallback 成功
+
+---
+
+## Phase D: 路由與安全防護升級
+
+### Task D-1: Model Router Integration — 升級 LiteLLM 路由與成本防護
+- **Commit**: `c43fa18` 🚦 feat(router): enhance SmartRouter with litellm cost tracking and exception handling
+- **改動**:
+  - 修改 `04_Engine/router.py` (24 行增進, 10 行刪減)
+- **實作細節**:
+  - 強化 `estimate_cost`，直接處理字典鍵對應 `Provider/Model` 及單純 `Model` 名稱格式的差異。
+  - 實現 `record_cost()` 更安全的 mapping，確保 litellm `cost_per_token` 對查驗發生 Key 錯誤時不崩潰並忽略消耗。
+  - 當接近 `daily_limit_m` 80% 時依然能觸發 warning 以協助防超支。
+  - 符合無網路 (offline) 降級以及 NPU 硬體自動優先等 v5 設計。
