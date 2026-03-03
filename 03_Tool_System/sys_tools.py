@@ -143,13 +143,30 @@ SYS_ASK_HUMAN = ToolSchema(
     requires_network=False
 )
 
+SYS_TAKE_SCREENSHOT = ToolSchema(
+    name="SYS_TAKE_SCREENSHOT",
+    description=(
+        "Take a screenshot of the user's current computer screen. "
+        "The resulting image will be automatically attached to your context in the next turn, "
+        "allowing you to visually inspect the state of the UI or read text on the screen."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {},
+        "required": []
+    },
+    install_type="system",
+    requires_network=False
+)
+
 # 方便匯出所有系統工具
 SYSTEM_TOOLS = [
     SYS_TOOL_SEARCH,
     SYS_TOOL_INSTALL,
     SYS_TASK_COMPLETE,
     SYS_ROLLBACK,
-    SYS_ASK_HUMAN
+    SYS_ASK_HUMAN,
+    SYS_TAKE_SCREENSHOT
 ]
 
 def register_system_tools(catalog) -> None:

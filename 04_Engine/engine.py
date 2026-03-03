@@ -15,6 +15,10 @@ AgentOS 的心臟。
 from __future__ import annotations
 
 import asyncio
+import time
+import base64
+import os
+import subprocess
 import logging
 from typing import Any, Callable, Optional
 
@@ -204,7 +208,19 @@ class Engine:
 
             # Rate limit
             if self._rate_limiter:
-                estimated_tokens = sum(len(m.get("content") or "") // 4 for m in messages)
+                estimated_tokens = 0
+                for m in messages:
+                    c = m.get("content")
+                    if isinstance(c, str):
+                        estimated_tokens += len(c) // 4
+                    elif isinstance(c, list):
+                        # 處理多模態 (text + image_url)
+                        for part in c:
+                            if part.get("type") == "text":
+                                estimated_tokens += len(part.get("text", "")) // 4
+                            elif part.get("type") == "image_url":
+                                estimated_tokens += 1000 # 預估一張圖約耗 1000 token
+                
                 await self._rate_limiter.acquire(estimated_tokens)
 
             # 呼叫 LLM（含自動重試）
@@ -265,8 +281,68 @@ class Engine:
                         payload={"tool_name": tool_name, "arguments": tool_args},
                     ))
 
-                    # 執行工具
-                    if self._tool_executor:
+                    # ==================================
+                    # 特殊系統工具攔截：SYS_TAKE_SCREENSHOT
+                    # ==================================
+                    if tool_name == "SYS_TAKE_SCREENSHOT":
+                        logger.info("📸 執行原生截圖...")
+                        try:
+                            # 優先使用 macOS native screencapture (較快且免依賴)
+                            tmp_path = "/tmp/agentos_screenshot.png"
+                            subprocess.run(["screencapture", "-x", "-C", tmp_path], check=True)
+                            
+                            with open(tmp_path, "rb") as img_file:
+                                b64_img = base64.b64encode(img_file.read()).decode('utf-8')
+                                
+                            os.remove(tmp_path)
+                            
+                            # 轉換為 multimodal message format (litellm 支援的通用格式)
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc.get("id", ""),
+                                "content": [
+                                    {"type": "text", "text": "Screenshot captured successfully."},
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:image/png;base64,{b64_img}"
+                                        }
+                                    }
+                                ]
+                            })
+                            
+                            await self.emit(EngineEvent(
+                                event_type=EventType.TOOL_RESULT,
+                                payload={"tool_name": tool_name, "output": "[Image Data]"},
+                            ))
+                            continue # 直接進入下一輪 LLM
+                        except Exception as e:
+                            logger.error(f"❌ 截圖失敗: {e} - 降級提供一空白圖片 (Headless mode)")
+                            # 1x1 像素的透明 PNG Base64 作為 Fallback
+                            b64_img = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
+                            
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc.get("id", ""),
+                                "content": [
+                                    {"type": "text", "text": f"Screenshot failed (Headless). Fallback dummy image provided. Error: {e}"},
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:image/png;base64,{b64_img}"
+                                        }
+                                    }
+                                ]
+                            })
+                            
+                            await self.emit(EngineEvent(
+                                event_type=EventType.TOOL_RESULT,
+                                payload={"tool_name": tool_name, "output": "[Dummy Image Data]"},
+                            ))
+                            continue
+                            
+                    # 執行一般工具
+                    elif self._tool_executor:
                         req = ToolCallRequest(
                             tool_name=tool_name,
                             arguments=tool_args,
