@@ -93,7 +93,7 @@ Whenever you are asked to write code, just use writing tools.
         sandbox_provider = docker_mod.DockerSandbox(work_dir=".")
     else:
         print("⚠️ 找不到 Docker，降級使用零隔離 SubprocessSandbox 進行測試")
-        sandbox_provider = subprocess_mod.SubprocessSandbox(work_dir=".")
+        sandbox_provider = subprocess_mod.SubprocessSandbox(work_dir=os.getcwd())
         
     sandbox_manager = sandbox_module.SandboxManager(config=config, provider=sandbox_provider)
     truncator = truncator_mod.Truncator(config=config)
