@@ -55,3 +55,14 @@
   - `install_tool()` 具備遠端 registry 下載及本地端 catalog.json 儲存
   - `uninstall_tool()` 與 `rate_tool()` 管理機制
   - 本地 Fallback 確保無網路時依然可用
+
+### Task B-2: Soul Gallery — 靈魂分享機制
+- **Commit**: `593383a` 🎭 feat(marketplace): Soul Gallery with publish/import/validate
+- **改動**:
+  - 新增 `10_Marketplace/soul_gallery.py` (176 行)
+- **實作細節**:
+  - 提供 `SoulGallery` 類別管理 `SOUL.md` 生態
+  - `validate_soul()` 驗證 Core Objectives / Rules / Skills 三大結構
+  - `publish_soul()` 生成包含 metadata 與 sha256 驗證的 `.soul.zip` 檔案
+  - `import_soul()` 支援防呆驗證後安全解壓縮並載入為當前 Agent 靈魂
+  - 統一存放於 `data/soul_gallery/`
