@@ -41,3 +41,17 @@
   - 紀錄每筆操作 payload hash、risk_level、agent_id 以及 timestamp
   - 提供 `export_report()` 產生 Markdown 報表
   - 整合至 ZeroTrust (阻擋即紀錄) 及 Subprocess Sandbox (執行完紀錄)
+
+---
+
+## Phase B: Marketplace & Token 經濟
+
+### Task B-1: Tool Store — 真實的工具安裝流程
+- **Commit**: `64270a3` 🏪 feat(marketplace): real tool install/uninstall/rate flow
+- **改動**:
+  - 新增 `10_Marketplace/marketplace.py` (179 行)
+- **實作細節**:
+  - 取代原有的危險 `exec_module`，改用 JSON Schema 定義安裝工具
+  - `install_tool()` 具備遠端 registry 下載及本地端 catalog.json 儲存
+  - `uninstall_tool()` 與 `rate_tool()` 管理機制
+  - 本地 Fallback 確保無網路時依然可用
