@@ -221,6 +221,20 @@ class CapabilityACLConfig:
 
 
 @dataclass
+class MCPServerConfig:
+    """單一 MCP Server 設定檔"""
+    command: str = ""       
+    args: list[str] = field(default_factory=list) 
+    env: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class MCPConfig:
+    """全域 MCP Server 設定"""
+    servers: dict[str, MCPServerConfig] = field(default_factory=dict)
+
+
+@dataclass
 class AgentOSConfig:
     """AgentOS 完整設定 — config.yaml 的根"""
     kernel: KernelConfig = field(default_factory=KernelConfig)
@@ -234,6 +248,7 @@ class AgentOSConfig:
     kg: KGConfig = field(default_factory=KGConfig)
     self_evolution: SelfEvolutionConfig = field(default_factory=SelfEvolutionConfig)
     capability_acl: CapabilityACLConfig = field(default_factory=CapabilityACLConfig)
+    mcp: MCPConfig = field(default_factory=MCPConfig)
 
 
 # ============================================================
@@ -273,6 +288,9 @@ def _dict_to_dataclass(cls, data: dict) -> Any:
         # 處理 list[ProviderConfig]
         elif key == "providers" and isinstance(value, list):
             kwargs[key] = [_dict_to_dataclass(ProviderConfig, v) if isinstance(v, dict) else v for v in value]
+        # 處理 dict[str, MCPServerConfig]
+        elif key == "servers" and isinstance(value, dict):
+            kwargs[key] = {k: _dict_to_dataclass(MCPServerConfig, v) if isinstance(v, dict) else v for k, v in value.items()}
         else:
             kwargs[key] = value
 
