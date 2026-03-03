@@ -1,4 +1,11 @@
-name: Security Auto-Scan
+# ==============================================
+# AgentOS Security Auto-Scan (Container Only)
+# ==============================================
+# Bandit 掃描已統一由 ci.yml 管理，此文件僅保留
+# Container Vulnerability Scan (Trivy)。
+# ==============================================
+
+name: Container Security Scan
 
 on:
   push:
@@ -7,27 +14,6 @@ on:
     branches: [ "main" ]
 
 jobs:
-  python-security:
-    name: AST Code Scan (Bandit)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install bandit
-          
-      - name: Run Bandit Auto-scan
-        # 忽略測試資料夾，掃描所有原始碼找尋 eval, exec, hardcoded passwords 等嚴重漏洞
-        run: |
-          bandit -r . -x ./tests -lll
-
   container-security:
     name: Container Vulnerability Scan (Trivy)
     runs-on: ubuntu-latest
@@ -43,7 +29,7 @@ jobs:
         with:
           image-ref: 'agentos:local'
           format: 'table'
-          # 只阻擋 CRITICAL 的底層 OS 或套件漏洞
+          # CRITICAL / HIGH 漏洞直接阻擋 PR
           exit-code: '1'
           ignore-unfixed: true
           vuln-type: 'os,library'

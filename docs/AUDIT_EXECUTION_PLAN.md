@@ -31,7 +31,7 @@
   **對策:** 在 `Engine.emit` 與 `APIGateway.call` 中埋設 OpenTelemetry Tracing Hooks，允許企業開發者無縫接入 Datadog, Prometheus, 或 Jaeger，實現完整的 Token、Cost 和時延追蹤。
 - [ ] **B.2 測試覆蓋率翻倍計畫 (Target: >70%)**:  
     **對策:** 補齊現有框架的測試漏洞，重點擴展 `test_a2a_bus.py` (針對談判極端情境)、`test_smart_router` (針對多模型 Failover)。當前進度：完成 Smart Router Failover，部分 test_a2a_bus 尚未完成。
-- [ ] **B.3 CI/CD 防線升級**:  
+- [X] **B.3 CI/CD 防線升級**:  
   **對策:** 加入 SonarQube / Bandit 的 PR 卡點機制。如果覆蓋率下降，則無法 Merge 合併。
 
 ### 🟢 Phase C: 全球化戰略與社群擴張 (Global Reach)

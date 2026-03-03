@@ -1,5 +1,5 @@
 """
-04_Engine — Smart Model Router (v5.0 SOTA)
+04_Engine — Smart Model Router (v5.1 — Dynamic Scoring)
 ============================================
 根據以下維度動態路由 LLM 請求：
   1. 任務複雜度 (tool count, turn count, system prompt keywords)
@@ -7,6 +7,7 @@
   3. 硬體加速器 (NPU/GPU 偵測 → 優先本地推論)
   4. 成本感知 (litellm model_cost → 超支自動降級)
   5. 使用者綁定 (config.yaml agents 映射)
+  6. 動態評分 (Sprint 1 新增: 歷史成功率 + 延遲 + 價格 啟發式評分)
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
+from dataclasses import dataclass, field
 from typing import Optional, Any, Dict, List
 
 __all__ = ["SmartRouter"]
@@ -38,6 +41,16 @@ except ImportError:
         NPUDetector = None
 
 
+@dataclass
+class ModelStats:
+    """模型歷史表現統計 (用於動態路由評分)"""
+    model: str = ""
+    total_calls: int = 0
+    success_count: int = 0
+    total_latency_ms: float = 0.0
+    recent_latencies: List[float] = field(default_factory=list)
+
+
 class SmartRouter:
     """
     AgentOS v5.0 Hybrid Model Router.
@@ -60,6 +73,9 @@ class SmartRouter:
 
         # 成本追蹤 (累計 session input/output tokens)
         self._session_cost_usd = 0.0
+
+        # 動態評分器：追蹤每個模型的歷史表現 (Sprint 1 新增)
+        self._model_stats: Dict[str, ModelStats] = {}
 
     def _load_capabilities(self) -> Dict[str, Any]:
         try:
@@ -167,6 +183,80 @@ class SmartRouter:
             logger.debug(f"💰 Session cost updated +${cost:.4f} (Total: ${self._session_cost_usd:.4f})")
 
     # ----------------------------------------------------------
+    # 動態評分器 (Sprint 1 新增)
+    # ----------------------------------------------------------
+
+    def record_outcome(self, model: str, success: bool, latency_ms: float) -> None:
+        """
+        記錄模型呼叫結果，用於動態評分。
+        由 Gateway 在每次 API 呼叫後調用。
+        """
+        if model not in self._model_stats:
+            self._model_stats[model] = ModelStats(model=model)
+        stats = self._model_stats[model]
+        stats.total_calls += 1
+        if success:
+            stats.success_count += 1
+        stats.total_latency_ms += latency_ms
+        # 保留最近 20 次的延遲記錄
+        stats.recent_latencies.append(latency_ms)
+        if len(stats.recent_latencies) > 20:
+            stats.recent_latencies.pop(0)
+
+    def _score_model(self, provider: str, model: str, estimated_tokens: int = 500) -> float:
+        """
+        啟發式評分：結合歷史成功率、延遲和價格計算最優模型。
+        分數越高越好 (0.0 ~ 1.0)。
+
+        評分公式：
+          score = w_success * success_rate
+                + w_speed * speed_score
+                + w_cost * cost_score
+
+        權重: 成功率(0.4) + 速度(0.3) + 價格(0.3)
+        """
+        key = f"{provider}/{model}"
+        stats = self._model_stats.get(key)
+
+        # 新模型（無歷史資料）→ 給予中等分數以鼓勵探索
+        if not stats or stats.total_calls < 3:
+            return 0.6
+
+        # 1. 成功率分數 (0.0 ~ 1.0)
+        success_rate = stats.success_count / stats.total_calls
+
+        # 2. 速度分數 (avg_latency 越低越好，以 5000ms 為基準)
+        avg_latency = stats.total_latency_ms / stats.total_calls
+        speed_score = max(0.0, 1.0 - (avg_latency / 5000.0))
+
+        # 3. 價格分數 (越便宜越好)
+        cost_per_1k = self.estimate_cost(provider, model)
+        if cost_per_1k <= 0:
+            cost_score = 0.5  # 無價格資料→中等
+        else:
+            # 以 $0.03/1K tokens (GPT-4o 等級) 為基準
+            cost_score = max(0.0, 1.0 - (cost_per_1k / 0.03))
+
+        final_score = 0.4 * success_rate + 0.3 * speed_score + 0.3 * cost_score
+        logger.debug(
+            f"🎯 ModelScore [{key}]: success={success_rate:.2f} speed={speed_score:.2f} "
+            f"cost={cost_score:.2f} → final={final_score:.3f}"
+        )
+        return final_score
+
+    def get_model_stats(self) -> Dict[str, dict]:
+        """取得所有模型的歷史表現統計（供 Dashboard 使用）"""
+        result = {}
+        for key, stats in self._model_stats.items():
+            result[key] = {
+                "total_calls": stats.total_calls,
+                "success_rate": stats.success_count / stats.total_calls if stats.total_calls > 0 else 0,
+                "avg_latency_ms": stats.total_latency_ms / stats.total_calls if stats.total_calls > 0 else 0,
+                "recent_latencies": stats.recent_latencies[-5:],
+            }
+        return result
+
+    # ----------------------------------------------------------
     # 主路由邏輯
     # ----------------------------------------------------------
     def route(
@@ -220,21 +310,40 @@ class SmartRouter:
                         )
                         return p_name, first_model, p_cfg.base_url
 
-        # ============ 5. DYNAMIC COMPLEXITY ROUTING ============
+        # ============ 5. DYNAMIC SCORING ROUTE (Sprint 1 新增) ============
         if request_agent_id in ["default", "auto"]:
             complexity = self.determine_complexity(messages, tools)
             role_map = {"complex": "orchestrator", "coding": "coder", "basic": "writer"}
             target_role = role_map.get(complexity, "writer")
 
+            # 估算 token 數量 (用於 cost scoring)
+            estimated_tokens = sum(
+                len(str(m.get("content", ""))) // 4
+                for m in messages
+            )
+
             candidates = self.capabilities.get("roles", {}).get(target_role, [])
+            scored_candidates: List[tuple[float, str]] = []
             for cand in candidates:
                 parts = cand.split("/")
                 if len(parts) == 2:
                     prov, mod = parts
                     p_cfg = providers_dict.get(prov)
                     if p_cfg and (p_cfg.api_key or p_cfg.base_url):
-                        logger.info(f"🧠 Router: complexity='{complexity}' → {cand}")
-                        return prov, mod, p_cfg.base_url
+                        score = self._score_model(prov, mod, estimated_tokens)
+                        scored_candidates.append((score, cand))
+
+            # 按分數降序排列，選擇最優模型
+            if scored_candidates:
+                scored_candidates.sort(key=lambda x: x[0], reverse=True)
+                best_score, best_cand = scored_candidates[0]
+                prov, mod = best_cand.split("/")
+                p_cfg = providers_dict.get(prov)
+                logger.info(
+                    f"🧠 Router: complexity='{complexity}' → {best_cand} "
+                    f"(score={best_score:.3f}, {len(scored_candidates)} candidates)"
+                )
+                return prov, mod, p_cfg.base_url if p_cfg else None
 
         # ============ 6. FALLBACK ============
         for p_name, p_config in providers_dict.items():

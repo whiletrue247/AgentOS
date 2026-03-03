@@ -113,6 +113,8 @@ exclude = ["__pycache__", ".pytest_cache", "tests"]
 [tool.bandit]
 exclude_dirs = ["tests", "__pycache__"]
 skips = ["B101"]  # assert 在測試中是正常的
+# CI 使用 -ll (Medium+) 作為 Hard Fail 門檻
+# 本地開發可用 bandit -r . -c pyproject.toml -f screen 檢查
 
 [tool.ruff]
 target-version = "py312"
@@ -129,4 +131,4 @@ omit = ["*/tests/*", "*/__pycache__/*"]
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 30
+fail_under = 50  # B.3: 從 30% 提升至 50%，CI 覆蓋率回歸保護

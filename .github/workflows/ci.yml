@@ -1,11 +1,13 @@
 # ==============================================
-# AgentOS CI Pipeline
+# AgentOS CI Pipeline — Production Gate
 # ==============================================
 # Triggers: push/PR to main
 # Jobs:
-#   1. test    — pytest + coverage
-#   2. lint    — ruff + mypy
-#   3. security — bandit (SAST) + trivy (container scan)
+#   1. test       — pytest + coverage (fail_under=50)
+#   2. lint       — ruff + mypy
+#   3. security   — bandit SAST (Hard Fail on Medium+)
+#   4. sonarcloud — code quality gate (optional)
+#   5. dependency-review — PR dependency audit
 # ==============================================
 
 name: CI
@@ -18,11 +20,12 @@ on:
 
 permissions:
   contents: read
-  security-events: write  # for trivy sarif upload
+  security-events: write
+  pull-requests: write  # for dependency-review comments
 
 jobs:
   # ================================================
-  # 1. Test
+  # 1. Test — pytest + Coverage Gate
   # ================================================
   test:
     runs-on: ubuntu-latest
@@ -46,17 +49,19 @@ jobs:
       - name: Run tests with coverage
         run: |
           python -m pytest tests/ -v --tb=short \
-            --cov --cov-report=xml --cov-report=term-missing
+            --cov --cov-report=xml --cov-report=term-missing \
+            --cov-fail-under=50
       
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
-          fail_ci_if_error: false
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   # ================================================
-  # 2. Lint
+  # 2. Lint — ruff + mypy
   # ================================================
   lint:
     runs-on: ubuntu-latest
@@ -85,7 +90,7 @@ jobs:
         continue-on-error: true  # 漸進式收緊，暫不 block CI
 
   # ================================================
-  # 3. Security
+  # 3. Security — Bandit SAST (Hard Fail)
   # ================================================
   security:
     runs-on: ubuntu-latest
@@ -98,17 +103,16 @@ jobs:
         with:
           python-version: "3.12"
       
-      # ---- Bandit (Python SAST) ----
+      # ---- Bandit (Python SAST) — Hard Fail on Medium+ ----
       - name: Install Bandit
         run: pip install "bandit[toml]>=1.7"
       
-      - name: Run Bandit security scan
+      - name: Run Bandit security scan (JSON report)
         run: |
           bandit -r . \
             -c pyproject.toml \
             -f json -o bandit-report.json \
             --exit-zero
-          bandit -r . -c pyproject.toml -f screen || true
       
       - name: Upload Bandit report
         if: always()
@@ -117,6 +121,10 @@ jobs:
           name: bandit-report
           path: bandit-report.json
       
+      - name: Run Bandit security gate (Medium+ = FAIL)
+        run: |
+          bandit -r . -c pyproject.toml -ll
+      
       # ---- Trivy (Container + FS Scan) ----
       - name: Run Trivy filesystem scan
         uses: aquasecurity/trivy-action@master
@@ -124,8 +132,8 @@ jobs:
           scan-type: "fs"
           scan-ref: "."
           format: "table"
-          exit-code: "0"
-          severity: "HIGH,CRITICAL"
+          exit-code: "1"
+          severity: "CRITICAL"
       
       # ---- Trivy Docker Image Scan ----
       - name: Build Docker image
@@ -138,7 +146,7 @@ jobs:
           format: "sarif"
           output: "trivy-results.sarif"
           severity: "HIGH,CRITICAL"
-          exit-code: "0"
+          exit-code: "1"
       
       - name: Upload Trivy SARIF
         if: always()
@@ -146,3 +154,39 @@ jobs:
         with:
           sarif_file: "trivy-results.sarif"
         continue-on-error: true
+
+  # ================================================
+  # 4. SonarCloud — Code Quality Gate
+  # ================================================
+  sonarcloud:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    needs: [test]
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # SonarCloud 需要完整 git history
+      
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        continue-on-error: true  # 若未設定 SONAR_TOKEN 則不阻擋
+
+  # ================================================
+  # 5. Dependency Review — PR 依賴漏洞審查
+  # ================================================
+  dependency-review:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: always
