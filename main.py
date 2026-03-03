@@ -253,7 +253,7 @@ async def boot() -> None:
 
         if not use_terminal and config.messenger.telegram.bot_token:
             try:
-                tg_mod = import_module("platform.messenger_telegram")
+                tg_mod = import_module("08_Platform.messenger_telegram")
                 tg_bot = tg_mod.TelegramMessenger(config=config, engine=engine)
                 await tg_bot.start()
                 logger.info("✅ Telegram Bot 已啟動")

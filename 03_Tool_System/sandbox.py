@@ -27,7 +27,7 @@ _DANGEROUS_PATTERNS: list[tuple[str, str]] = [
     (r"socket\.socket", "試圖建立原始 socket 連線"),
     # 低階攻擊
     (r"ctypes\.(?:cdll|CDLL|windll)", "試圖透過 ctypes 載入原生函式庫"),
-    (r"importlib\..*exec_module", "動態載入並執行模組 (RCE 向量)"),
+    (r"exec_module\s*\(", "動態載入並執行模組 (RCE 向量)"),
     # 檔案系統攻擊
     (r"/proc/", "存取 /proc 檔案系統"),
     (r"/etc/(?:shadow|passwd|sudoers)", "存取系統敦感檔案"),
