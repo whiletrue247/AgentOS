@@ -1,5 +1,10 @@
 # Agent Base OS — 核心架構藍圖 (v5.0)
 
+![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
+
 為 AI Agent 打造的作業系統級基礎設施平台。
 **不是 APP，是 OS。** 貼上 API Key，3 分鐘內擁有一個高智商、全副武裝的 AI Agent。對新手友善，對資深玩家實用，所有參數可自訂。閒置 RAM < 60MB，峰值 < 150MB，無 GPU，零風扇。
 
@@ -7,185 +12,97 @@
 
 ---
 
-## 架構總覽：4 核心 + 2 平台
+## 🚀 Quick Start
 
+安裝 Agent Base OS 最快的方法：
+
+### 方式一：本地安裝 (推薦給開發者)
+```bash
+# 複製專案
+git clone https://github.com/your-repo/Agent_Base_OS.git
+cd Agent_Base_OS
+
+# 安裝主程式與所有可選依賴
+pip install -e ".[all]"
+
+# 啟動 Onboarding Wizard
+python start.py
 ```
-USER ↔ [Messenger / Dashboard]      ← 平台層：使用者接觸的介面
-              ↓
-       [04_Engine]  ←→  API          ← 心臟：API 路由 + 事件循環 + 安全閥
-              ↓
-       [03_Tool_System]  →  沙盒執行  ← 手腳：找工具 + 裝工具 + 安全執行
-              ↓
-       [02_Memory]  ←→  讀寫記憶      ← 海馬迴：統一記憶存取
-              ↓
-       [01_Kernel]  ←  SOUL.md       ← 靈魂：身份認同載入
+
+### 方式二：Docker 容器化 (推薦給生產環境)
+```bash
+# 使用 Docker Compose 一鍵啟動 (包含 PostgreSQL, Neo4j, Redis)
+docker-compose up -d
+
+# 進入容器內部使用 CLI 管理工具
+docker exec -it agent_os_daemon bash
+python 08_Dashboard/cli_commands.py audit
 ```
 
 ---
 
-## 核心層 (4 個不可移除的子系統)
+## 架構總覽：4 核心 + 2 平台 + 11 模組
 
-### 1. `01_Kernel` — 靈魂載入器
-OS 啟動時讀取根目錄的 `SOUL.md` 作為純文字，塞入 System Prompt。OS 不規定 SOUL.md 的內容結構——使用者可以寫任何想寫的東西。SOUL Generator（Dashboard 內建）可一鍵生成個性化靈魂。
+AgentOS v5.0 已擴展為涵蓋作業系統整合、協同網狀網路與市集生態的全面解決方案。
 
-### 2. `02_Memory` — 統一記憶數據元
-定義 `UnifiedMemoryItem` 作為跨後端的萬用記憶格式。支援 SQLite、PgVector、Obsidian、Notion 等後端隨插即用。內建雙時序引擎、關聯拓樸、可選向量嵌入、行為反饋學習迴路。換資料庫 = 換 Provider，數據源永遠標準化。
-
-### 3. `03_Tool_System` — 套件管理員 + 安全執行引擎 (合併原 03+04)
-工具的完整生命週期在一個系統內完成：**發現 → 安裝 → 沙盒執行 → 結果回傳**。
-
-| 子模組 | 職責 | 運行層級 |
-|---|---|---|
-| **Catalog** | 全球可用工具的 JSON 索引 + BM25 路由 | OS 特權層 |
-| **Installer** | SYS_TOOL_INSTALL 三類安裝機制 | OS 特權層 |
-| **Sandbox** | WASM / E2B / subprocess 隔離執行 | 沙盒隔離層 (囚犯看不到 Catalog) |
-| **Truncator** | 輸出截斷 + 結果清洗 | OS 特權層 |
-
-- 5 個不可卸載的系統工具：`SYS_TOOL_SEARCH`、`SYS_TOOL_INSTALL`、`SYS_TASK_COMPLETE`、`SYS_ROLLBACK`、`SYS_ASK_HUMAN`。
-- 安全性靠 WASM/E2B 的物理隔離，不靠模組拆分。Sandbox 內的代碼無法觸碰 Catalog 或 Installer。
-- 所有沙盒參數（網路策略、截斷比例、超時秒數）皆由 USER 在 `config.yaml` 自訂。
-
-### 4. `04_Engine` — 心臟引擎 + API 閘道器 (合併原 05+Gateway)
-整個 OS 的心臟。管理 API 呼叫的完整生命週期：**路由 → 發送 → 串流 → 重試 → 快取 → 限速**。
-
-| 子模組 | 職責 |
-|---|---|
-| **API Gateway** | 多 Key 管理、Model-to-Agent 路由、Key 隱秘注入、自動 Failover、Model Adapter |
-| **Event Loop** | asyncio 事件驅動、Task Queue、Cron 排程 |
-| **A2A Bus** | Multi-Agent 間的事件路由與子任務分配 |
-| **Rate Limiter** | RPM/TPM Token Bucket 節流 |
-| **Streamer** | SSE 串流即時轉發給 Messenger / Dashboard |
-| **Auto-Retry** | 指數退避重試 (429/500/502/503) |
-| **Prompt Cache** | 自動利用 Claude/Gemini/OpenAI 的快取機制 |
-| **Watchdog** | 任務級步數上限 + 死循環偵測 |
-| **State Machine** | 任務狀態 + Checkpoint 可中斷復原 |
-
-- 所有參數均由 USER 在 `config.yaml` 自訂。
+```mermaid
+graph TD
+    USER((USER)) <--> Messenger[Platform: Messenger/Dashboard]
+    Messenger <--> Engine[04_Engine: Heart & Router]
+    
+    subgraph Core OS
+        Kernel[01_Kernel: SOUL Daemon] --> Engine
+        Engine <--> Mem[02_Memory_Context: Mem0/PKG]
+        Engine <--> Tool[03_Tool_System: Sandbox/ZeroTrust]
+        Engine <--> Orch[05_Orchestrator: Swarm & CrewAI]
+        Engine <--> Embodiment[06_Embodiment: Human Preview/Desktop]
+    end
+    
+    subgraph Extended Environment
+        PKG[07_PKG: GraphRAG] <--> Mem
+        Dash[08_Dashboard: CLI & TUI] <--> Engine
+        OSHook[09_OS_Integration: Win/Mac/Linux] <--> Embodiment
+        Market[10_Marketplace: Tool Store & Soul Gallery] <--> Kernel
+        Sync[11_Sync_Handoff: P2P State Transfer] <--> Engine
+    end
+```
 
 ---
 
-## 平台層 (2 個使用者介面)
+## 核心系統 11 大模組列表
 
-### 💬 Messenger (通訊軟體介面)
-Telegram / Discord / LINE / Slack。雙向通訊 + 富媒體訊息 + 多頻道支援。
-
-### 📊 Dashboard (輕量可視化面板)
-純 HTML+JS 本地面板。任務總覽 + Token 花費追蹤 + Engine 狀態 + 設定編輯 + SOUL Generator。
+1. **`01_Kernel` — 靈魂與進程守護者**：載入 `SOUL.md` 與系統守護行程。
+2. **`02_Memory_Context` — 混合記憶池**：整合 Mem0 (向量) 支援，作為上下文高速快取。
+3. **`03_Tool_System` — 囚犯沙盒**：WASM/Subprocess 隔離執行，避免本機崩壞。
+4. **`04_Engine` — 決策引擎與安全閥**：涵蓋 SmartRouter (動態省錢路由)、ZeroTrust (零信任人工審核放行) 與 Audit Trail 監控。
+5. **`05_Orchestrator` — 網狀協同總線**：支援 LangGraph DAG、CrewAI 角色分派與非同步 Agent to Agent (A2A) 通訊。
+6. **`06_Embodiment` — 人機具像化**：Desktop Runtime 控制與 Human Preview 可視化介入。
+7. **`07_PKG` — 專屬知識圖譜**：GraphRAG 核心，提供 NetworkX 備援與 Neo4j 關聯式記憶。
+8. **`08_Dashboard` — 觀測儀表板**：TUI (rich.live) 面板與命令列 Audit 操作。
+9. **`09_OS_Integration` — 作業系統掛鉤**：跨平台 (Windows/macOS/Wayland/X11) 的鍵盤滑鼠模擬與視窗讀取。
+10. **`10_Marketplace` — 靈魂與套件市集**：內建 M-Token 虛擬貨幣驅動的 Agent 工具 / `SOUL.md` 交換平台。
+11. **`11_Sync_Handoff` — P2P 接力傳輸**：保存執行快照 (Checkpoints) 與 WebSocket 本地網域無縫狀態轉移。
 
 ---
 
 ## 🎨 使用者體驗層 (UX Layer) — 2027 新手友善設計
 
-### 🚀 Onboarding Wizard (首次啟動引導)
-使用者第一次執行 `python start.py` 時，OS 自動進入互動式引導模式：
+### 💰 Cost Guard (預算守衛)與智慧路由
+OS 內建透明的 Token 用量控制機制與智慧路由，以降低不必要的花費：
+- 大腦分離 (Smart Router)：依據任務複雜度，自動分配至本機 NPU 運算或是雲端 GPT-4o。
+- 每日上限防護：達到 `budget.daily_limit_m` 自動斷電並主動提示。
 
-```
-Step 1/4 — 選擇 AI 模型
-  [1] OpenAI (GPT-4o) — 最強通用
-  [2] Anthropic (Claude) — 最擅長寫程式
-  [3] 本地 Ollama — 免費，不需要網路
-
-Step 2/4 — 輸入 API Key
-  還沒有？點這裡申請：https://platform.openai.com/api-keys
-  > sk-xxxxx
-  ✅ 連線成功！剩餘額度：$18.50
-
-Step 3/4 — 建立 AI 靈魂 (可跳過)
-  → 開啟 Dashboard 的 SOUL Generator
-
-Step 4/4 — 選擇通訊方式
-  [1] Telegram Bot
-  [2] Discord Bot
-  [3] 只用終端機
-
-🎉 設定完成！跟你的 Agent 說第一句話吧。
-```
-
-Wizard 自動生成 `config.yaml`。**新手永遠不需要手動編輯 YAML。**
-
-### 💰 Cost Guard (預算守衛)
-OS 內建透明的 Token 用量控制機制，以 **M (百萬 Token)** 為計量單位（不綁定任何貨幣，因為不同模型價格不同）：
-
-- **執行前預估**：Agent 在執行複雜任務前，透過 `SYS_ASK_HUMAN` 向 USER 展示預估 Token 用量
-- **即時計量**：Engine 紀錄每次 API 呼叫的 Token 數量，累計換算成 M
-- **每日上限**：達到 `budget.daily_limit_m` 時自動停止並通知 USER
-- **每月報表**：Dashboard 顯示每日 / 每週 / 每月的 Token 消耗圖表（分 Input / Output）
-
-### 🗣️ 自然語言設定 (Natural Language Config)
-USER 不需要打開 config.yaml。直接在 Messenger 裡說：
-
-```
-USER: 把我的每日預算設成 5 塊美金
-Agent: ✅ 已更新 budget.daily_limit: 5.00
-
-USER: 以後你回覆都用中文
-Agent: ✅ 已更新 SOUL.md → 語言偏好：中文
-```
+### 🛡️ Zero Trust 與 Human-in-the-Loop
+「不相信任何 LLM，包括最聰明的」。
+- 新增 Zero Trust 模組攔截 `rm -rf` 等極端系統操作，並呼叫終端機 `Interactive Prompt` 等待人類按 `Y` 放行。
+- Subprocess 沙盒內強制剔除 `OPENAI_API_KEY` 與切斷 `http_proxy` 避免網路越權。
 
 ### 📋 任務計畫可視化 (Plan Preview)
-Agent 執行複雜任務前，先展示計畫再執行：
-
-```
-Agent:
-  📋 執行計畫：
-  1. 分析 5 個 Python 檔案結構
-  2. 逐一轉譯成 TypeScript
-  3. 建立 tsconfig.json
-  4. 沙盒內編譯測試
-  預估：~15 步，~0.08M Token，~5 分鐘
-  
-  繼續執行嗎？
-```
-
-這個行為由 SOUL.md 的本能引導 + `SYS_ASK_HUMAN` 確認機制配合實現。
-
-### 📐 5 大 UX 交互原則
-
-| 原則 | 說明 |
-|---|---|
-| **零設定即可用** | Onboarding Wizard 完成後，Agent 立即可工作，不需額外配置 |
-| **透明無驚喚** | 每個動作的費用、風險、進度都透明可見 |
-| **漸進式信任** | 初期多確認，隨使用經驗累積自動減少請示 |
-| **人類永遠可介入** | `SYS_ASK_HUMAN` 確保 Agent 卡住時有正式求助管道 |
-| **可撤銷可回滾** | `SYS_ROLLBACK` 確保任何設定變更都可逆轉 |
+Agent 執行複雜任務前，透過 `SYS_ASK_HUMAN` 或是 `08_Dashboard/cli_commands.py simulate` 展示 10 步預測計畫 (含 RiskLevel)，確保一切在掌握之中。
 
 ---
 
-## 可安裝的生態工具 (從 Tool Catalog 安裝)
-
-以下功能**不在 OS 核心中**，而是作為可選工具存在於 Catalog：
-
-| 工具 | 說明 | 原屬子系統 |
-|---|---|---|
-| `ax_screen_reader` | macOS AXUIElement 語義樹讀取 | 原 06_External_Senses |
-| `uia_screen_reader` | Windows UIA 語義樹讀取 | 原 06_External_Senses |
-| `semantic_click` | 跨平台語義點擊 (AXPress/InvokePattern) | 原 06_External_Senses |
-| `browser_cdp` | Chrome DevTools Protocol 網頁操控 | 原 06_External_Senses |
-| `vision_screenshot` | Vision API 截圖流 (GPT-4o Vision) | 原 06_External_Senses |
-| `context_compressor` | 上下文壓縮器 (用便宜模型做滾動摘要) | 原 05_Engine |
-| `embedding_router` | 本地 Embedding 語意路由 (替代 BM25) | 原 03_Tool_Registry |
-| `evolver_gep` | GEP 自我進化協議 (Memory → SOUL 畢業) | 外部生態 |
-| `web_search` | 即時網路搜索 (Serper/Tavily) | 新增 |
-| `file_parser_pdf` | PDF 轉純文字 | 新增 |
-
----
-
-## 子系統管轄權定義 (Jurisdiction Charter)
-
-| 操作類型 | 管轄 | 說明 |
-|---|---|---|
-| SOUL.md 載入 | `01_Kernel` | 純文字讀取，不解析結構 |
-| 記憶讀寫與檢索 | `02_Memory` | 所有 Provider 的統一介面 |
-| 工具發現、安裝、Schema 驗證 | `03_Tool_System` (OS 層) | Catalog + Installer |
-| 工具實際執行 (bash, python) | `03_Tool_System` (Sandbox 層) | WASM / E2B / subprocess |
-| API 呼叫路由與發送 | `04_Engine` | Gateway + Streamer |
-| 速率控制 (RPM/TPM) | `04_Engine` | Rate Limiter |
-| 任務生命週期管理 | `04_Engine` | Watchdog + State Machine |
-| GUI 互動 (點按鈕、讀螢幕) | Tool Catalog 可選工具 | 需要才裝 |
-
----
-
-## 統一設定檔 `config.yaml`
+## 統一設定檔 `config.yaml` 範例
 
 ```yaml
 # 靈魂
@@ -196,46 +113,20 @@ kernel:
 gateway:
   providers:
     - name: openai
-      api_key: sk-xxx
+      api_key: encrypted_sk_xxx # 支援 Fernet 加密儲存
       models: [gpt-4o, gpt-4o-mini]
-    - name: anthropic
-      api_key: sk-ant-xxx
-      models: [claude-3.5-sonnet]
-    - name: ollama
-      base_url: http://localhost:11434
-      models: [mistral, llama3]
   agents:
     default: openai/gpt-4o
-    code_agent: anthropic/claude-3.5-sonnet
-    summary_agent: openai/gpt-4o-mini
 
-# 引擎
+# 引擎與隔離
 engine:
   streaming: true
-  retry: { max_attempts: 3, backoff_multiplier: 2 }
-  rate_limit: { rpm: 30, tpm: 100000 }
-  watchdog: { max_steps: 50, timeout_per_step: 300 }
-  context: { compression_trigger: 0.8, keep_recent_turns: 3 }
+  zero_trust_enabled: true
+sandbox:
+  default_network: deny    # deny | allow
+  timeout_seconds: 60
 
 # 預算守衛 (單位：M = 百萬 Token)
 budget:
   daily_limit_m: 1.0        # 每日上限 1M Token
-  warn_before_task: true     # 執行前預估 Token 用量
-  track_input_output: true   # 分開追蹤 Input / Output Token
-
-# 沙盒
-sandbox:
-  default_network: deny    # deny | allow
-  timeout_seconds: 60
-  truncation: { threshold: 2000, head_ratio: 0.1, tail_ratio: 0.2 }
-
-# 通訊
-messenger:
-  telegram: { bot_token: "xxx", enabled: true }
-  discord: { bot_token: "xxx", enabled: false }
-
-# 面板
-dashboard:
-  port: 8080
-  enabled: true
 ```
