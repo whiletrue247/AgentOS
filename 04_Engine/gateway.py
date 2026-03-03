@@ -199,7 +199,7 @@ class APIGateway:
     # ----------------------------------------------------------
     # litellm backend
     # ----------------------------------------------------------
-    async def _call_via_litellm(
+    async def _do_call_via_litellm(
         self,
         provider: ProviderConfig,
         model: str,
@@ -263,11 +263,11 @@ class APIGateway:
         )
         self._call_history.append(record)
 
-            logger.info(
-                f"✅ [{provider.name}/{model}] via litellm ({elapsed_ms}ms, "
-                f"in:{input_tokens} out:{output_tokens})"
-            )
-            return result
+        logger.info(
+            f"✅ [{provider.name}/{model}] via litellm ({elapsed_ms}ms, "
+            f"in:{input_tokens} out:{output_tokens})"
+        )
+        return result
             
     async def _call_via_litellm(self, *args, **kwargs):
         """帶有 OpenTelemetry 追蹤的 litellm 呼叫"""
@@ -292,8 +292,6 @@ class APIGateway:
                     raise
         else:
             return await self._do_call_via_litellm(*args, **kwargs)
-
-    async def _do_call_via_litellm(
 
     # ----------------------------------------------------------
     # httpx fallback (當 litellm 未安裝時)
