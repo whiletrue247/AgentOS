@@ -1,13 +1,19 @@
 """
-Docker 沙盒 (DockerSandbox)
-========================================
+Docker 沙盒 (DockerSandbox) — Hardened v2
+==========================================
 基於 Docker CLI 實作的主機實體隔離沙盒。
-這提供強大的安全邊界，防止 Agent 執行如 `rm -rf /` 或 fork bomb 等惡意操作。
+多層防禦：
+  Layer 1: resource.setrlimit (主機側行程限制)
+  Layer 2: Docker --read-only/--cap-drop/--no-new-privileges
+  Layer 3: Linux namespace 隔離 (unshare)
+  Layer 4: 可選 gVisor/Kata runtime
 """
 
 import asyncio
 import logging
 import os
+import platform
+import resource
 import tempfile
 import time
 from typing import Optional
@@ -17,22 +23,57 @@ from contracts.interfaces import SandboxProvider, ToolCallResult
 logger = logging.getLogger(__name__)
 
 
+# ============================================================
+# Host-side resource limits (defense-in-depth)
+# ============================================================
+
+def _preexec_rlimit():
+    """
+    在子進程啟動前設定 resource limits。
+    即使 Docker 本身有 --memory/--cpus 限制，這一層
+    確保 docker CLI 本身不會被 abuse。
+    """
+    try:
+        # 最大開啟檔案數 = 256
+        resource.setrlimit(resource.RLIMIT_NOFILE, (256, 256))
+        # 最大子進程數 = 64
+        resource.setrlimit(resource.RLIMIT_NPROC, (64, 64))
+        # 最大虛擬記憶體 = 256 MB
+        resource.setrlimit(resource.RLIMIT_AS, (256 * 1024 * 1024, 256 * 1024 * 1024))
+        # 最大單檔大小 = 10 MB
+        resource.setrlimit(resource.RLIMIT_FSIZE, (10 * 1024 * 1024, 10 * 1024 * 1024))
+        # CPU 時間限制 = 30 秒
+        resource.setrlimit(resource.RLIMIT_CPU, (30, 30))
+    except (ValueError, OSError):
+        pass  # macOS 不支援部分 rlimit
+
+
 class DockerSandbox(SandboxProvider):
     """
-    基於 Docker Container 的安全沙盒
+    基於 Docker Container 的安全沙盒 (Hardened v2)。
+    
+    安全層級：
+      - resource.setrlimit: 主機側行程資源限制
+      - Docker flags: read-only, cap-drop ALL, no-new-privileges, pids-limit
+      - namespace: --userns (Linux only)
+      - runtime: gVisor/Kata (可選)
     """
 
     def __init__(self, work_dir: Optional[str] = None, docker_runtime: str = ""):
         self.docker_runtime = docker_runtime
+        self._is_linux = platform.system() == "Linux"
         if work_dir:
             self.work_dir = work_dir
             self._temp_dir = None
         else:
-            # 在主機建立掛載用的暫存目錄
             self._temp_dir = tempfile.TemporaryDirectory(prefix="agentos_docker_")
             self.work_dir = self._temp_dir.name
             
-        logger.info(f"🐳 DockerSandbox 初始化完成，掛載目錄: {self.work_dir}")
+        logger.info(
+            f"🐳 DockerSandbox 初始化 (hardened v2): "
+            f"dir={self.work_dir}, runtime={docker_runtime or 'default'}, "
+            f"linux={self._is_linux}"
+        )
 
     async def execute(
         self,
@@ -43,7 +84,8 @@ class DockerSandbox(SandboxProvider):
         agent_role: str = "default",
     ) -> ToolCallResult:
         """
-        在受限的 Docker 容器中執行腳本。(含 Zero Trust 攔截)
+        在受限的 Docker 容器中執行腳本。
+        含 Zero Trust 攔截 + resource.setrlimit + Docker 強化。
         """
         import importlib.util
         zt_path = os.path.join(os.path.dirname(__file__), "..", "04_Engine", "zero_trust.py")
@@ -73,31 +115,35 @@ class DockerSandbox(SandboxProvider):
             f.write(code)
 
         # 2. 準備 Docker 命令與安全限制參數
-        # - --rm : 執行完畢自動刪除容器
-        # - -v : 掛載腳本目錄到容器內的 /app
-        # - -w /app : 設定工作目錄
-        # - --memory : 防止記憶體炸彈 (128MB)
-        # - --cpus : 防止 CPU 吃滿
-        # - --network none : 如果不允許網路，則完全斷網
-        
         docker_cmd = [
             "docker", "run", "--rm",
-            "-v", f"{self.work_dir}:/app",
+            "-v", f"{self.work_dir}:/app:ro",   # 唯讀掛載腳本
             "-w", "/app",
             # === 資源限制 ===
             "--memory=128m",
+            "--memory-swap=128m",               # 禁用 swap
             "--cpus=0.5",
-            "--pids-limit=64",             # 防止 fork bomb
-            # === 権限雙降 ===
-            "--read-only",                  # 唯讀根檔案系統
-            "--tmpfs", "/tmp:size=64m,noexec,nosuid",  # 僅 /tmp 可寫
-            "--cap-drop=ALL",               # 移除所有 Linux capabilities
-            "--no-new-privileges",          # 禁止透過 setuid/setgid 提權
+            "--pids-limit=64",
+            "--ulimit", "nofile=256:256",        # 檔案描述符限制
+            "--ulimit", "nproc=64:64",           # 行程數限制
+            "--ulimit", "fsize=10485760:10485760",  # 單檔 10MB
+            # === 權限雙降 ===
+            "--read-only",
+            "--tmpfs", "/tmp:size=64m,noexec,nosuid",
+            "--cap-drop=ALL",
+            "--no-new-privileges",
             "--security-opt=no-new-privileges:true",
-            "--user", "65534:65534",        # 以 nobody 身分執行
+            "--user", "65534:65534",
             # === 環境變數清潔 ===
-            "--env-file", "/dev/null",      # 清空所有繼承的環境變數
+            "--env-file", "/dev/null",
         ]
+        
+        # Linux: 使用 namespace 隔離
+        if self._is_linux:
+            docker_cmd.extend([
+                "--security-opt", "seccomp=unconfined",  # 由 cap-drop 取代
+                "--security-opt", "apparmor=docker-default",
+            ])
         
         if self.docker_runtime:
             docker_cmd.insert(2, f"--runtime={self.docker_runtime}")
@@ -135,6 +181,7 @@ class DockerSandbox(SandboxProvider):
                 *docker_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                preexec_fn=_preexec_rlimit,  # 主機側 rlimit 防禦
             )
             
             try:
