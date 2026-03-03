@@ -193,6 +193,13 @@ def load_config(config_path: Optional[str] = None) -> AgentOSConfig:
     else:
         path = Path(config_path)
 
+    # 載入專案根目錄的 .env 檔案
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(path.parent / ".env")
+    except ImportError:
+        pass
+
     if not path.exists():
         return AgentOSConfig()
 

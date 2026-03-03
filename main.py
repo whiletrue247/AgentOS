@@ -129,7 +129,6 @@ async def boot() -> None:
     catalog_mod = import_module("03_Tool_System.catalog")
     sys_tools_mod = import_module("03_Tool_System.sys_tools")
     sandbox_module = import_module("03_Tool_System.sandbox")
-    subprocess_mod = import_module("03_Tool_System.sandbox_subprocess")
     docker_mod = import_module("03_Tool_System.sandbox_docker")
     truncator_mod = import_module("03_Tool_System.truncator")
 
@@ -152,8 +151,8 @@ async def boot() -> None:
             docker_runtime=config.sandbox.docker_runtime
         )
     else:
-        logger.warning("⚠️ 找不到 Docker，降級使用零隔離 SubprocessSandbox")
-        sandbox_provider = subprocess_mod.SubprocessSandbox(work_dir="./data/sandbox_workspace")
+        logger.critical("🚨 找不到 Docker！基於 Zero Trust 安全原則，系統拒絕在無強隔離環境下提供 Sandbox 服務。請安裝 Docker 或停用 Sandbox 工具。")
+        raise RuntimeError("Docker is required for Sandbox execution. No fallback allowed.")
         
     sandbox_manager = sandbox_module.SandboxManager(config=config, provider=sandbox_provider)
     truncator = truncator_mod.Truncator(config=config)

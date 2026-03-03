@@ -6,12 +6,12 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 import importlib.util
-spec = importlib.util.spec_from_file_location("sandbox_subprocess", os.path.join(os.path.dirname(__file__), "..", "03_Tool_System", "sandbox_subprocess.py"))
+spec = importlib.util.spec_from_file_location("sandbox_docker", os.path.join(os.path.dirname(__file__), "..", "03_Tool_System", "sandbox_docker.py"))
 sandbox_mod = importlib.util.module_from_spec(spec)
 valid_spec = spec
 if valid_spec and valid_spec.loader:
     valid_spec.loader.exec_module(sandbox_mod)
-SubprocessSandbox = sandbox_mod.SubprocessSandbox
+DockerSandbox = sandbox_mod.DockerSandbox
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ async def run_zero_trust_tests():
     logger.info("🛡️ 開始 Zero Trust 安全攔截機制測試")
     logger.info("============================================================")
     
-    sandbox = SubprocessSandbox()
+    sandbox = DockerSandbox()
     
     # 測試 1: 安全指令
     logger.info("\n--- 測試 1: 執行安全指令 (echo) ---")

@@ -24,10 +24,10 @@ class HumanPreviewUI:
     def __init__(self):
         self.console = Console()
 
-    def request_approval(self, action_type: str, details: str) -> bool:
+    def request_approval(self, action_type: str, details: str) -> str:
         """
         提請人類審核桌面控制動作。
-        回傳 True 代表放行，False 代表阻斷。
+        回傳: 'execute', 'modify', 'cancel'
         """
         self.console.print(Panel(
             f"[bold yellow]⚠️ Agent 請求桌面控制權限[/]\n\n"
@@ -40,14 +40,25 @@ class HumanPreviewUI:
         if not sys.stdin.isatty():
             # 無法互動時預設阻斷
             logger.warning("⚠️ 非互動環境，拒絕桌面控制。")
-            return False
+            return "cancel"
 
-        try:
-            ans = input("批准此動作？ (Y/n): ").strip().lower()
-            if ans in ['', 'y', 'yes']:
-                logger.info(f"✅ 人類批准 {action_type}")
-                return True
-            logger.warning(f"🚫 人類拒絕 {action_type}")
-            return False
-        except (KeyboardInterrupt, EOFError):
-            return False
+        print("\n請選擇你要進行的操作:")
+        print("  [1] 執行 (Execute)")
+        print("  [2] 修改參數 (Modify)")
+        print("  [3] 取消/回滾 (Cancel)")
+
+        while True:
+            try:
+                ans = input("您的選擇 [1/2/3]? ").strip().lower()
+                if ans in ['1', 'e', 'execute', '']:
+                    logger.info(f"✅ 人類批准 {action_type}")
+                    return "execute"
+                elif ans in ['2', 'm', 'modify']:
+                    return "modify"
+                elif ans in ['3', 'c', 'cancel']:
+                    logger.warning(f"🚫 人類拒絕 {action_type}")
+                    return "cancel"
+                else:
+                    print("無效的選擇，請輸入 1, 2, 或 3。")
+            except (KeyboardInterrupt, EOFError):
+                return "cancel"
