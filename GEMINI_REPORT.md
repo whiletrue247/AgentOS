@@ -66,3 +66,18 @@
   - `publish_soul()` 生成包含 metadata 與 sha256 驗證的 `.soul.zip` 檔案
   - `import_soul()` 支援防呆驗證後安全解壓縮並載入為當前 Agent 靈魂
   - 統一存放於 `data/soul_gallery/`
+
+---
+
+## Phase C: Agent 協作與切換
+
+### Task C-1: Multi-Agent Handoff — 真實的 Agent 切換與狀態交接
+- **Commit**: `8471443` 🔄 feat(handoff): SQLite checkpointing for real multi-device state sync
+- **改動**:
+  - 覆寫 `11_Sync_Handoff/handoff_manager.py` (128 行)
+  - 修改 `tests/test_phase6.py` 以適應新結構
+- **實作細節**:
+  - 捨棄 Mock，實作基於 `sqlite3` 的本地端 Checkpointer (`handoff_checkpoint.db`)
+  - 透過 `save_checkpoint(thread_id, state_dict)` 與 `load_checkpoint()` 保存 LangGraph 的對話與推理狀態
+  - `export_session_state()` 將當下狀態序列化為 Base64 URI `agentos://handoff?payload=...`
+  - `import_session_state()` 還原 URI 回存至資料庫以便無縫接力執行
