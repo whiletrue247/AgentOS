@@ -8,6 +8,10 @@
 1. schema_only: 下載 JSON Schema (適用 MCP 或 HTTP API)
 2. local_plugin: 下載 Python 腳本到本地 plugins 目錄，並解壓縮其 TOOL_SCHEMA
 3. system_package: 將 pip 套件加入到 Sandbox 的 requirements 中
+
+v5.1 新增 (Sprint 2): 工具安全深度掃描
+  - AST 危險節點檢測 (exec/eval/compile/subprocess/os.system)
+  - 安裝前自動阻擋含危險代碼的工具
 """
 
 import ast
@@ -135,6 +139,7 @@ class ToolInstaller:
         """
         下載 Python 腳本到 tools/plugins 目錄。
         使用 ast 靜態分析提取 TOOL_SCHEMA，防範 RCE。
+        v5.1: 新增危險 AST 節點掃描 (Sprint 2)。
         """
         target_path = self.plugins_dir / f"{tool_name}.py"
         raw_bytes = b""
@@ -151,22 +156,35 @@ class ToolInstaller:
                 
         if not self._verify_hash(raw_bytes, expected_hash):
             return False
-            
-        with open(target_path, "wb") as f:
-            f.write(raw_bytes)
-            
-        # 安全靜態解析 (AST Parsing) 避免 `exec_module` 導致的 RCE
+
+        # === Sprint 2: 安全深度掃描 ===
         source_code = raw_bytes.decode('utf-8')
         try:
             tree = ast.parse(source_code)
-            schema_dict = None
+        except SyntaxError as e:
+            logger.error(f"🔒 安全阻擋: {tool_name} 包含無法解析的 Python 語法: {e}")
+            return False
+
+        # 掃描危險 AST 節點
+        violations = self._scan_dangerous_ast(tree, tool_name)
+        if violations:
+            logger.error(
+                f"🔒 安全阻擋: {tool_name} 包含 {len(violations)} 個危險調用，拒絕安裝！\n"
+                + "\n".join(f"  • {v}" for v in violations)
+            )
+            return False
+
+        # 通過安全掃描，寫入檔案
+        with open(target_path, "wb") as f:
+            f.write(raw_bytes)
             
-            # 尋找模組層級的變數賦值
+        # 提取 TOOL_SCHEMA
+        try:
+            schema_dict = None
             for node in tree.body:
                 if isinstance(node, ast.Assign):
                     for target in node.targets:
                         if isinstance(target, ast.Name) and target.id == "TOOL_SCHEMA":
-                            # 取出賦值內容並強制安全轉型為 dict
                             schema_dict = ast.literal_eval(node.value)
                             break
                 if schema_dict is not None:
@@ -174,10 +192,12 @@ class ToolInstaller:
                     
             if schema_dict is None:
                 logger.error(f"⚠️ 在 {tool_name} 中找不到 TOOL_SCHEMA 變數定義")
+                target_path.unlink(missing_ok=True)  # 清理已寫入的檔案
                 return False
                 
         except Exception as e:
             logger.error(f"⚠️ 解析 {tool_name} 的 Schema 失敗，格式可能不合法: {e}")
+            target_path.unlink(missing_ok=True)
             return False
                 
         schema = ToolSchema(
@@ -188,7 +208,79 @@ class ToolInstaller:
             requires_network=schema_dict.get("requires_network", False)
         )
         self.catalog.register_tool(schema)
+        logger.info(f"✅ 工具 {tool_name} 安全掃描通過，已安裝")
         return True
+
+    # ========================================
+    # Sprint 2: 危險 AST 節點掃描
+    # ========================================
+
+    _DANGEROUS_CALLS = {
+        # 直接執行任意代碼
+        "exec", "eval", "compile", "execfile",
+        # 系統命令執行
+        "system", "popen", "popen2", "popen3", "popen4",
+        # 子程序
+        "call", "run", "Popen", "check_output", "check_call",
+        # 動態導入
+        "__import__", "import_module",
+    }
+
+    _DANGEROUS_MODULES = {
+        "subprocess", "os", "shutil", "ctypes", "importlib",
+        "pty", "commands", "webbrowser",
+    }
+
+    def _scan_dangerous_ast(self, tree: ast.AST, tool_name: str) -> list[str]:
+        """
+        掃描 AST 中的危險節點。
+        回傳違規描述列表（空列表 = 安全）。
+        """
+        violations: list[str] = []
+
+        for node in ast.walk(tree):
+            # 1. 檢測危險函數呼叫: exec(), eval(), os.system() 等
+            if isinstance(node, ast.Call):
+                func_name = self._get_call_name(node)
+                if func_name and any(d in func_name for d in self._DANGEROUS_CALLS):
+                    violations.append(
+                        f"Line {getattr(node, 'lineno', '?')}: "
+                        f"危險呼叫 `{func_name}()` — 可能導致任意代碼執行"
+                    )
+
+            # 2. 檢測危險模組導入: import subprocess, import os 等
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name.split(".")[0] in self._DANGEROUS_MODULES:
+                        violations.append(
+                            f"Line {getattr(node, 'lineno', '?')}: "
+                            f"危險導入 `import {alias.name}` — 限制模組"
+                        )
+
+            elif isinstance(node, ast.ImportFrom):
+                if node.module and node.module.split(".")[0] in self._DANGEROUS_MODULES:
+                    violations.append(
+                        f"Line {getattr(node, 'lineno', '?')}: "
+                        f"危險導入 `from {node.module} import ...` — 限制模組"
+                    )
+
+        return violations
+
+    @staticmethod
+    def _get_call_name(node: ast.Call) -> str:
+        """從 AST Call 節點提取函數名稱"""
+        if isinstance(node.func, ast.Name):
+            return node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            parts = []
+            current = node.func
+            while isinstance(current, ast.Attribute):
+                parts.append(current.attr)
+                current = current.value
+            if isinstance(current, ast.Name):
+                parts.append(current.id)
+            return ".".join(reversed(parts))
+        return ""
 
 
     def _install_system_package(self, tool_name: str, source_url: str) -> bool:
