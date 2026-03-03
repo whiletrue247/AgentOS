@@ -159,28 +159,42 @@ class SubprocessSandbox:
                 if err_str:
                     final_output += f"\n[STDERR]\n{err_str}"
 
+                exec_time = int((time.time() - start_time) * 1000)
+                self._log_audit(agent_role, f"{language}_exec", code, "success" if success else "failed", exec_time)
+                
                 return ToolCallResult(
                     tool_name=f"{language}_exec",
                     success=success,
                     output=final_output.strip(),
                     error=err_str if not success else None,
-                    execution_time_ms=int((time.time() - start_time) * 1000),
+                    execution_time_ms=exec_time,
                 )
 
             except asyncio.TimeoutError:
                 self._kill_process_tree(process.pid)
+                exec_time = int((time.time() - start_time) * 1000)
+                self._log_audit(agent_role, f"{language}_exec", code, "timeout", exec_time, risk="medium")
                 return ToolCallResult(
                     tool_name=f"{language}_exec", success=False, output="",
                     error=f"Timeout after {timeout_seconds}s (process tree killed)",
-                    execution_time_ms=int((time.time() - start_time) * 1000),
+                    execution_time_ms=exec_time,
                 )
 
         except Exception as e:
+            exec_time = int((time.time() - start_time) * 1000)
+            self._log_audit(agent_role, f"{language}_exec", code, "failed", exec_time, risk="medium")
             return ToolCallResult(
                 tool_name=f"{language}_exec", success=False, output="",
                 error=f"Process launch failed: {e}",
-                execution_time_ms=int((time.time() - start_time) * 1000),
+                execution_time_ms=exec_time,
             )
+
+    def _log_audit(self, role: str, action: str, payload: str, result: str, exec_time: int, risk: str = "low"):
+        try:
+            from audit_trail import get_audit_trail
+            get_audit_trail().log_action(role, action, payload, result, risk_level=risk, execution_time_ms=exec_time)
+        except ImportError:
+            pass
 
     # ----------------------------------------------------------
     # Security Helpers

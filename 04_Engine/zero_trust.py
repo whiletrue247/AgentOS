@@ -41,9 +41,11 @@ class ZeroTrustInterceptor:
         
         # 1. Broad Capability Check
         if action_type == "shell" and not role_config.get("can_execute_shell", False):
+            self._log_audit(role, action_type, payload, "blocked", "medium", "Missing 'can_execute_shell'")
             return False, f"Role '{role}' is missing 'can_execute_shell' capability."
         
         if action_type == "network" and not role_config.get("can_access_network", False):
+            self._log_audit(role, action_type, payload, "blocked", "medium", "Missing 'can_access_network'")
             return False, f"Role '{role}' is missing 'can_access_network' capability."
 
         # 2. Content Deep Inspection (特別是 Shell)
@@ -52,6 +54,8 @@ class ZeroTrustInterceptor:
                 if regex.search(payload):
                     logger.critical(f"🚨 [ZERO TRUST] 攔截危險操作！角色: {role}, 指令: {payload}")
                     
+                    self._log_audit(role, action_type, payload, "blocked", "critical", f"Regex match: {regex.pattern}")
+                    
                     # 假裝這裡有 Telegram 通知 (即時通知)
                     self._notify_human_supervisor(role, payload)
                     
@@ -59,6 +63,19 @@ class ZeroTrustInterceptor:
                     return False, "Execution Denied by Human Supervisor. Destructive action not allowed. Soft-Rollback triggered."
             
         return True, "Passed"
+
+    def _log_audit(self, role: str, action_type: str, payload: str, result: str, risk: str, reason: str):
+        try:
+            from audit_trail import get_audit_trail
+            get_audit_trail().log_action(
+                agent_id=role,
+                action_type=f"zt_{action_type}",
+                payload=f"{reason} | {payload}",
+                result_status=result,
+                risk_level=risk
+            )
+        except ImportError:
+            pass
 
     def _notify_human_supervisor(self, role: str, payload: str):
         """假想的外部通知服務 (Telegram / Dashboard)"""
