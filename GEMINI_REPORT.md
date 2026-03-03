@@ -119,6 +119,20 @@
 
 ---
 
+## Phase E: 可觀測性 Dashboard 2.0
+
+### Task E-1: 豐富 CLI Dashboard 資訊
+- **Commit**: `257be2f` 📊 feat(dashboard): audit trail + KG + router + agent panels via rich.live.Live
+- **改動**:
+  - 新增 `08_Dashboard/dashboard.py` (199 行)
+- **實作細節**:
+  - 引用 `rich` 與 `rich.live.Live` 作為 TUI 框架，帶來高刷新率的視覺化監控。
+  - **Audit Trail 面板**: 對接 `audit_trail.py`，列出最近 10 筆系統操作與安全層級。
+  - **KG Stats 面板**: 對接 `graph_rag.py` 顯示 Nodes 與 Edges 的大小狀況。
+  - **Router & Agent 面板**: 顯示 `ROUTER_AVAILABLE` 下的 NPU 與目前成本追蹤、Agent Swarm 的待命狀態。
+
+---
+
 ## ✅ 總結 (All Tasks Completed)
 
 所有在 `GEMINI_TASKS.md` 中規劃的 **Phase A 到 Phase D** 已全數由 GEMINI SOTA 代碼實作完成，每一階段皆通過 `pyflakes` 靜態語法分析以及 `pytest` 端對端自動化測試。所有類別與方法皆實作完備的 Type Hints 及 Docstrings，並且不使用 `mock/sleep` 等假實作，為 **AgentOS v5.0** 奠定了具備「全端攔截、安全評估、模型路由及接力傳輸」能力的堅實基礎！
