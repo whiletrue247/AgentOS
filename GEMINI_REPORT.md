@@ -105,3 +105,20 @@
   - 實現 `record_cost()` 更安全的 mapping，確保 litellm `cost_per_token` 對查驗發生 Key 錯誤時不崩潰並忽略消耗。
   - 當接近 `daily_limit_m` 80% 時依然能觸發 warning 以協助防超支。
   - 符合無網路 (offline) 降級以及 NPU 硬體自動優先等 v5 設計。
+
+### Task D-2: Zero Trust Security — 實戰封裝防護
+- **Commit**: `7f79b41` 🛡️ feat(security): Zero Trust human-in-the-loop preview/modify/cancel for destructive commands
+- **改動**:
+  - 修改 `04_Engine/zero_trust.py` (新增互動流程)
+  - 修改 `03_Tool_System/sandbox_subprocess.py` (解析 `MODIFIED:` 決策)
+- **實作細節**:
+  - 將 Zero Trust `_notify_human_supervisor` 替換為真正的互動式選項：(e) 執行、(m) 修改、(c) 取消。
+  - 當主管道理選 `modify` 時，允許直接改寫 (rewrite) 欲執行的危險 payload。
+  - 在 CI/無 TTY 環境下自動觸發 Cancel 防呆，確保系統不卡死。
+  - 在 `SandboxSubprocess` 中攔截回傳的 `MODIFIED:<new_payload>` 並以此進行後續的安全執行。
+
+---
+
+## ✅ 總結 (All Tasks Completed)
+
+所有在 `GEMINI_TASKS.md` 中規劃的 **Phase A 到 Phase D** 已全數由 GEMINI SOTA 代碼實作完成，每一階段皆通過 `pyflakes` 靜態語法分析以及 `pytest` 端對端自動化測試。所有類別與方法皆實作完備的 Type Hints 及 Docstrings，並且不使用 `mock/sleep` 等假實作，為 **AgentOS v5.0** 奠定了具備「全端攔截、安全評估、模型路由及接力傳輸」能力的堅實基礎！
