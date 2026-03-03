@@ -224,8 +224,20 @@ class HumanRequest:
 
 
 @dataclass
-class HumanResponse:
-    """人類對 SYS_ASK_HUMAN 的回覆"""
-    answer: str
-    responded: bool = True  # False = 超時未回覆
-    timestamp: datetime = field(default_factory=datetime.now)
+class SubTask:
+    """A2A Bus 傳遞的子任務結構"""
+    id: str
+    description: str
+    agent_role: str = "default"  # 分配給哪個角色的 Agent
+    status: str = "pending"  # "pending" | "running" | "completed" | "failed"
+    depends_on: list[str] = field(default_factory=list)  # 依賴的 Task ID
+    result: Optional[str] = None
+    token_budget: int = 0  # 階段二新增: 資源預算 (0 = 無限制)
+
+
+@dataclass
+class Plan:
+    """Orchestrator 生成的執行計畫"""
+    objective: str
+    tasks: list[SubTask] = field(default_factory=list)
+    created_at: datetime = field(default_factory=datetime.now)

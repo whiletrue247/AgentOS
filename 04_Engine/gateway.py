@@ -134,6 +134,7 @@ class APIGateway:
         tools: Optional[list[dict]] = None,
         stream: bool = False,
         temperature: float = 0.7,
+        **kwargs
     ) -> dict[str, Any]:
         """
         發送 LLM API 請求，含自動重試與離線 failover。
@@ -151,12 +152,14 @@ class APIGateway:
                         provider=provider, model=model,
                         messages=messages, tools=tools,
                         stream=stream, temperature=temperature,
+                        **kwargs
                     )
                 else:
                     result = await self._call_via_httpx(
                         provider=provider, model=model,
                         messages=messages, tools=tools,
                         temperature=temperature,
+                        **kwargs
                     )
                 return result
 
@@ -187,11 +190,12 @@ class APIGateway:
         tools: Optional[list[dict]] = None,
         stream: bool = False,
         temperature: float = 0.7,
+        **kwargs
     ) -> dict[str, Any]:
         """使用 litellm.acompletion() 進行 LLM 呼叫。"""
         litellm_model = self._to_litellm_model(provider.name, model)
 
-        kwargs: dict[str, Any] = {
+        call_kwargs: dict[str, Any] = {
             "model": litellm_model,
             "messages": messages,
             "temperature": temperature,
@@ -200,19 +204,23 @@ class APIGateway:
 
         # Ollama 或其他自建端點需要 base_url
         if provider.base_url:
-            kwargs["api_base"] = provider.base_url
+            call_kwargs["api_base"] = provider.base_url
 
         # 如果有 API key 直接傳入 (覆蓋環境變數)
         if provider.api_key:
-            kwargs["api_key"] = provider.api_key
+            call_kwargs["api_key"] = provider.api_key
 
         # Tool calling
         if tools:
-            kwargs["tools"] = [{"type": "function", "function": t} for t in tools]
+            call_kwargs["tools"] = [{"type": "function", "function": t} for t in tools]
+            # litellm 預設會自動選擇 tool_choice = "auto"
+
+        # 合併額外的 kwargs
+        call_kwargs.update(kwargs)
 
         start = time.time()
         try:
-            response = await litellm.acompletion(**kwargs)
+            response = await litellm.acompletion(**call_kwargs)
         except Exception as e:
             error_str = str(e)
             if "connect" in error_str.lower() or "timeout" in error_str.lower():
@@ -254,6 +262,7 @@ class APIGateway:
         messages: list[dict],
         tools: Optional[list[dict]] = None,
         temperature: float = 0.7,
+        **kwargs
     ) -> dict[str, Any]:
         """Fallback: 用 httpx 直接打 OpenAI-compatible endpoint。"""
         import httpx
@@ -269,6 +278,9 @@ class APIGateway:
         }
         if tools:
             payload["tools"] = [{"type": "function", "function": t} for t in tools]
+        
+        # 合併額外的 kwargs
+        payload.update(kwargs)
 
         headers: dict[str, str] = {"content-type": "application/json"}
         if provider.api_key:

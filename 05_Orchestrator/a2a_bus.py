@@ -95,29 +95,71 @@ class A2ABus:
     # 核心：執行單個子任務
     # ----------------------------------------------------------
     async def dispatch_task(self, task: SubTask, global_context: str = "") -> str:
-        """向指定的 sub-agent 派發任務，透過 Gateway 做真實 LLM 呼叫。"""
+        """向指定的 sub-agent 派發任務，支援 A2A 共識網路 (協商與多簽審核)。"""
         logger.info(f"🚌 A2ABus: Dispatching Task [{task.id}] → {task.agent_role}")
 
+        # 第一階段：準備 System Prompt
         system_prompt = get_role_prompt(task.agent_role)
         if global_context:
             system_prompt += f"\n\n[GLOBAL CONTEXT]\n{global_context}"
+            
+        # 加入財務預算感知 (Token Economy)
+        budget_instruction = ""
+        if hasattr(task, 'token_budget') and task.token_budget:
+            budget_instruction = f"\n\n[ECONOMY]\nYou have a strict budget of {task.token_budget} tokens. Be extremely concise and efficient."
 
         messages = [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": system_prompt + budget_instruction},
             {"role": "user", "content": f"Your task:\n{task.description}"},
         ]
 
-        try:
-            response = await self.engine.gateway.call(
-                messages=messages,
-                agent_id=task.agent_role,
-            )
-            result = response["choices"][0]["message"]["content"]
-            logger.info(f"✅ A2ABus: Task [{task.id}] completed by {task.agent_role}.")
-            return result
-        except Exception as e:
-            logger.error(f"❌ A2ABus: Task [{task.id}] failed: {e}")
-            raise
+        max_negotiation_turns = 3
+        current_turn = 0
+        
+        while current_turn < max_negotiation_turns:
+            try:
+                # 階段二：子 Agent 執行與提案 (Execution & Proposal)
+                # 強制附加 max_tokens 限制以防範預算超標
+                call_kwargs = {
+                    "messages": messages,
+                    "agent_id": task.agent_role,
+                }
+                if hasattr(task, 'token_budget') and task.token_budget and task.token_budget > 0:
+                    call_kwargs["max_tokens"] = task.token_budget
+
+                response = await self.engine.gateway.call(**call_kwargs)
+                result = response["choices"][0]["message"]["content"]
+                
+                # 階段三：多簽審計 (Multi-signature Audit)
+                # 假設這裡固定透過 Critic 角色來進行雙重確認 (Double Check)
+                audit_prompt = get_role_prompt("critic")
+                audit_messages = [
+                    {"role": "system", "content": audit_prompt},
+                    {"role": "user", "content": f"Task Description:\n{task.description}\n\nProposed Result from {task.agent_role}:\n{result}\n\nEvaluate if the result strictly and safely fulfills the task. Reply with 'APPROVED' or list the specific defects."}
+                ]
+                
+                logger.info(f"⚖️ A2ABus: Submitting result of [{task.id}] for Multi-Sig Audit...")
+                audit_response = await self.engine.gateway.call(
+                    messages=audit_messages,
+                    agent_id="critic",
+                )
+                audit_result = audit_response["choices"][0]["message"]["content"].strip()
+                
+                if "APPROVED" in audit_result.upper():
+                    logger.info(f"✅ A2ABus: Task [{task.id}] completed & APPROVED by Auditor.")
+                    return result
+                else:
+                    logger.warning(f"⚠️ A2ABus: Task [{task.id}] REJECTED by Auditor. Reason:\n{audit_result}")
+                    current_turn += 1
+                    # 階段四：交涉與重試 (Negotiation & Retry)
+                    messages.append({"role": "assistant", "content": result})
+                    messages.append({"role": "user", "content": f"Your previous result was REJECTED by the Auditor.\nFeedback: {audit_result}\n\nPlease fix the defects and submit a revised result."})
+                    
+            except Exception as e:
+                logger.error(f"❌ A2ABus: Task [{task.id}] failed during execution/audit: {e}")
+                raise
+
+        raise RuntimeError(f"Task [{task.id}] failed to reach consensus after {max_negotiation_turns} negotiation turns.")
 
     # ----------------------------------------------------------
     # LangGraph DAG Execution

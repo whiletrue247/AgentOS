@@ -1,21 +1,10 @@
 import json
 import logging
 from typing import List, Any, Optional
-from pydantic import BaseModel, Field
+
+from contracts.interfaces import SubTask, Plan
 
 logger = logging.getLogger(__name__)
-
-class SubTask(BaseModel):
-    id: str = Field(..., description="Unique ID for the sub-task (e.g., 'task_1')")
-    description: str = Field(..., description="Detailed instruction for what needs to be done")
-    agent_role: str = Field(..., description="Role best suited for this task (e.g., 'researcher', 'coder', 'writer')")
-    depends_on: List[str] = Field(default_factory=list, description="List of task IDs that must be completed before this one")
-    status: str = Field("pending", description="Status: 'pending', 'in_progress', 'completed', 'failed'")
-    result: Optional[str] = Field(None, description="The output result once completed")
-
-class DAGPlan(BaseModel):
-    objective: str = Field(..., description="The overall objective being solved")
-    tasks: List[SubTask] = Field(default_factory=list, description="List of tasks forming the DAG")
     
 class TaskPlanner:
     """
@@ -26,9 +15,9 @@ class TaskPlanner:
     
     def __init__(self, gateway: Any):
         self.gateway = gateway
-        self.current_plan: Optional[DAGPlan] = None
+        self.current_plan: Optional[Plan] = None
 
-    async def generate_plan(self, objective: str) -> DAGPlan:
+    async def generate_plan(self, objective: str) -> Plan:
         """呼叫高智商 LLM 把任務拆掉"""
         logger.info(f"🧠 TaskPlanner: 正在拆解巨型任務 -> {objective}")
         
@@ -40,6 +29,7 @@ class TaskPlanner:
         - "description": string
         - "agent_role": string (choose from "researcher", "coder", "writer", "critic")
         - "depends_on": array of string (IDs of tasks that must be done first)
+        - "token_budget": integer (estimated maximum tokens budget for this step, e.g. 500, 1000, 4000)
         """
         
         # 呼叫大腦 (自動透過 SmartRouter 轉到 Orchestrator)
@@ -60,11 +50,20 @@ class TaskPlanner:
                 reply_content = reply_content.split("```json")[1].split("```")[0].strip()
             elif "```" in reply_content:
                 reply_content = reply_content.split("```")[1].split("```")[0].strip()
-                
+            
             task_list = json.loads(reply_content)
             
-            sub_tasks = [SubTask(**t) for t in task_list]
-            self.current_plan = DAGPlan(objective=objective, tasks=sub_tasks)
+            sub_tasks = []
+            for t in task_list:
+                sub_tasks.append(SubTask(
+                    id=t.get("id", ""),
+                    description=t.get("description", ""),
+                    agent_role=t.get("agent_role", "default"),
+                    depends_on=t.get("depends_on", []),
+                    token_budget=t.get("token_budget", 0)
+                ))
+            
+            self.current_plan = Plan(objective=objective, tasks=sub_tasks)
             
             logger.info(f"✅ 任務拆解完成！共產生 {len(sub_tasks)} 個子階段。")
             return self.current_plan
