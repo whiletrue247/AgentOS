@@ -37,9 +37,45 @@ class ToolCatalog:
         self.config = config
         self.catalog_path = Path(catalog_path or get_catalog_path())
         self.tools: dict[str, ToolSchema] = {}
+        self.mcp_clients: dict[str, Any] = {} # { server_name: MCPClient }
         self.bm25 = BM25Index()
         
         self.load_catalog()
+
+    async def init_mcp_servers(self) -> None:
+        """非同步初始化所有定義在 Config 中的 MCP Server，並拉取工具"""
+        if not self.config or not self.config.mcp.servers:
+            return
+            
+        try:
+            # 開發環境下動態引入，避免 import 循環
+            from importlib import import_module
+            mcp_mod = import_module('03_Tool_System.mcp_client')
+            MCPClient = mcp_mod.MCPClient
+        except ImportError as e:
+            logger.error(f"⚠️ 無法載入 MCPClient，略過 MCP Server 初始化: {e}")
+            return
+
+        for name, srv_config in self.config.mcp.servers.items():
+            if not srv_config.command:
+                continue
+                
+            client = MCPClient(name=name, config=srv_config)
+            success = await client.start()
+            if success:
+                self.mcp_clients[name] = client
+                # 拉取工具註冊
+                tools = await client.get_tools()
+                for t in tools:
+                    # mcp_server 的 tools 不需要存檔至 catalog.json，每次啟動動態掛載
+                    self.register_tool(t, save=False)
+                logger.info(f"🔌 已從 MCP {name} 載入 {len(tools)} 個工具")
+
+    async def shutdown(self) -> None:
+        """關閉所有 MCP 連線"""
+        for name, client in self.mcp_clients.items():
+            await client.stop()
+        self.mcp_clients.clear()
 
     def register_tool(self, tool: ToolSchema, save: bool = True) -> None:
         """

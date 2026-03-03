@@ -184,6 +184,9 @@ async def boot() -> None:
 
         # 對話歷史持久化初始化
         _init_conversation_db()
+        
+        # 初始化 MCP Servers 並動態加載工具
+        await tool_catalog.init_mcp_servers()
 
         logger.info(f"✅ 工具系統已啟動 ({len(tool_catalog.get_all_tools())} 工具)")
 
@@ -217,7 +220,31 @@ async def boot() -> None:
                     error=f"Tool '{req.tool_name}' not found in catalog.",
                 )
 
-            # 如果工具有 execute 邏輯 (local_plugin)，用 sandbox 執行
+            # 如果工具有 mcp_server 屬性，交給對應的 MCP Client 執行
+            if tool_schema.mcp_server:
+                mcp_client = tool_catalog.mcp_clients.get(tool_schema.mcp_server)
+                if not mcp_client:
+                    return ToolCallResult(
+                        tool_name=req.tool_name,
+                        success=False, output="",
+                        error=f"MCP Server '{tool_schema.mcp_server}' not connected.",
+                    )
+                try:
+                    output = await mcp_client.call_tool(req.tool_name, req.arguments)
+                    return ToolCallResult(
+                        tool_name=req.tool_name,
+                        success=True,
+                        output=truncator.truncate(output) if output else "",
+                        error=None,
+                    )
+                except Exception as e:
+                    return ToolCallResult(
+                        tool_name=req.tool_name,
+                        success=False, output="",
+                        error=str(e),
+                    )
+
+            # 否則，如果是 local_plugin，用 sandbox 執行
             try:
                 result = await sandbox_manager.execute(
                     tool_name=req.tool_name,
@@ -354,6 +381,7 @@ async def boot() -> None:
             sandbox_manager=sandbox_manager,
             sandbox_provider=sandbox_provider,
             tg_bot=tg_bot,
+            tool_catalog=tool_catalog if 'tool_catalog' in locals() else None,
         )
 
 
@@ -362,6 +390,7 @@ async def _shutdown(
     sandbox_manager=None,
     sandbox_provider=None,
     tg_bot=None,
+    tool_catalog=None,
 ):
     """Graceful shutdown: 確保所有資源釋放（保證在所有退出路徑中被呼叫）"""
     # 1. 停止 Telegram Bot
@@ -387,6 +416,14 @@ async def _shutdown(
             logger.info("🧹 Sandbox 已清理")
         except Exception as e:
             logger.error(f"❌ Sandbox 清理失敗: {e}")
+            
+    # 4. 關閉 MCP Clients
+    if tool_catalog:
+        try:
+            await tool_catalog.shutdown()
+            logger.info("🔌 MCP 連線已關閉")
+        except Exception as e:
+            logger.error(f"❌ MCP 關閉失敗: {e}")
 
     logger.info("👋 AgentOS 已關閉。")
 
