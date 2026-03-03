@@ -31,6 +31,46 @@ logger = logging.getLogger(__name__)
 # Callback type
 EventHandler = Callable[[EngineEvent], Any]
 
+# 最大 API 重試次數
+MAX_API_RETRIES = 2
+
+
+def _is_retryable(error: Exception) -> bool:
+    """
+    判斷 API 錯誤是否可重試。
+    可重試：Timeout、429 (Rate Limit)、5xx (Server Error)
+    不可重試：401/403 (Auth)、400 (Bad Request)、其他未知錯誤
+    """
+    error_str = str(error).lower()
+    error_type = type(error).__name__.lower()
+
+    # Timeout 類錯誤
+    if "timeout" in error_str or "timeout" in error_type:
+        return True
+
+    # 連線錯誤
+    if "connection" in error_str or "connect" in error_type:
+        return True
+
+    # HTTP status code 判斷
+    status_code = getattr(error, "status_code", None)
+    if status_code is not None:
+        # 429 Rate Limit、5xx Server Error 可重試
+        if status_code == 429 or 500 <= status_code < 600:
+            return True
+        # 4xx Client Error 不可重試
+        if 400 <= status_code < 500:
+            return False
+
+    # 檢查錯誤訊息中的 status code
+    if "429" in error_str or "rate limit" in error_str:
+        return True
+    if any(f"{code}" in error_str for code in range(500, 504)):
+        return True
+
+    # 預設不重試（保守策略）
+    return False
+
 
 class Engine:
     """
@@ -163,24 +203,40 @@ class Engine:
             logger.info(f"🔄 ReAct Step {self._step_count}/{max_steps}")
 
             # Rate limit
-            # Rate limit
             if self._rate_limiter:
                 estimated_tokens = sum(len(m.get("content") or "") // 4 for m in messages)
                 await self._rate_limiter.acquire(estimated_tokens)
 
-            # 呼叫 LLM
+            # 呼叫 LLM（含自動重試）
             if not self._gateway:
                 return "❌ Engine Error: No API Gateway configured."
 
-            try:
-                response = await self._gateway.call(
-                    messages=messages,
-                    agent_id=agent_id,
-                    stream=False,
-                )
-            except Exception as e:
-                logger.error(f"❌ API call failed: {e}")
-                return f"❌ API Error: {e}"
+            response = None
+            last_error: Optional[Exception] = None
+            for attempt in range(MAX_API_RETRIES + 1):
+                try:
+                    response = await self._gateway.call(
+                        messages=messages,
+                        agent_id=agent_id,
+                        stream=False,
+                    )
+                    break  # 成功，跳出重試迴圈
+                except Exception as e:
+                    last_error = e
+                    if attempt < MAX_API_RETRIES and _is_retryable(e):
+                        wait_seconds = 2 ** attempt  # 1s, 2s 指數退避
+                        logger.warning(
+                            f"⚠️ API 呼叫失敗 (重試 {attempt + 1}/{MAX_API_RETRIES})，"
+                            f"等待 {wait_seconds}s 後重試: {e}"
+                        )
+                        await asyncio.sleep(wait_seconds)
+                    else:
+                        logger.error(f"❌ API call failed (不可重試): {e}")
+                        return f"❌ API Error: {e}"
+
+            if response is None:
+                logger.error(f"❌ API call exhausted all retries: {last_error}")
+                return f"❌ API Error (重試耗盡): {last_error}"
 
             # 解析回應
             choice = response.get("choices", [{}])[0]
