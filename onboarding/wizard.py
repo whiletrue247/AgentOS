@@ -8,6 +8,7 @@ onboarding/wizard.py
   2. 輸入 API Key
   3. 產生初始 SOUL.md
   4. 設定通訊方式 (Terminal / Telegram)
+  5. 選擇是否加密 API Key (Fernet)
 """
 
 import getpass
@@ -16,6 +17,11 @@ import sys
 import yaml
 from pathlib import Path
 from typing import Any
+
+try:
+    from utils.secret_manager import encrypt_value
+except ImportError:
+    encrypt_value = lambda x, p=None: x
 
 
 # Defaults for generating a fresh config
@@ -55,6 +61,7 @@ class OnboardingWizard:
                 "telegram": {"bot_token": ""}
             }
         }
+        self.master_password = None
 
     def run(self) -> bool:
         """執行首次啟動精靈"""
@@ -62,10 +69,11 @@ class OnboardingWizard:
             return False # 表示不需執行或已經存在
             
         print("\n" + "="*50)
-        print("🚀 歡迎使用 AgentOS (v4.0) 🚀")
+        print("🚀 歡迎使用 AgentOS (v5.0) 🚀")
         print("系統偵測到您是首次啟動，讓我們進行快速設定。")
         print("="*50 + "\n")
 
+        self.step_0_security()
         self.step_1_model_selection()
         self.step_2_soul_generation()
         self.step_3_messenger()
@@ -75,8 +83,31 @@ class OnboardingWizard:
         print("\n🎉 設定完成！正在啟動 AgentOS...\n")
         return True
 
+    def step_0_security(self):
+        print("Step 1/5 — 安全設定 🔒")
+        print("建議將 API Key 加密儲存。若選擇加密，您需要在每次啟動時藉由環境變數")
+        print("`AGENTOS_MASTER_KEY` 提供密碼。")
+        choice = input("是否啟用 config.yaml API Key 加密？ [Y/n]: ").strip().lower()
+        if choice != 'n':
+            while True:
+                pwd1 = getpass.getpass("🔑 請設定 Master Password: ").strip()
+                pwd2 = getpass.getpass("🔑 請再次輸入以確認: ").strip()
+                if pwd1 == pwd2 and pwd1:
+                    self.master_password = pwd1
+                    print("✅ 加密已啟用。請牢記此密碼！")
+                    break
+                else:
+                    print("❌ 密碼不一致或為空，請重試。\n")
+        else:
+            print("⚠️ 將以明文儲存 API Key。")
+
+    def _maybe_encrypt(self, value: str) -> str:
+        if self.master_password and value:
+            return encrypt_value(value, self.master_password)
+        return value
+
     def step_1_model_selection(self):
-        print("Step 1/4 — 選擇主要驅動模型")
+        print("\nStep 2/5 — 選擇主要驅動模型")
         print("  [1] OpenAI (推薦，最穩定通用)")
         print("  [2] Anthropic (適合寫程式)")
         print("  [3] 本地 Ollama (免費，無需網路，需先安裝)")
@@ -100,7 +131,7 @@ class OnboardingWizard:
         api_key = getpass.getpass("🔑 請輸入您的 OpenAI API Key (sk-...): ").strip()
         provider = {
             "name": "openai",
-            "api_key": api_key,
+            "api_key": self._maybe_encrypt(api_key),
             "models": ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"]
         }
         self.config_data["gateway"]["providers"].append(provider)
@@ -111,7 +142,7 @@ class OnboardingWizard:
         api_key = getpass.getpass("🔑 請輸入您的 Anthropic API Key (sk-ant-...): ").strip()
         provider = {
             "name": "anthropic",
-            "api_key": api_key,
+            "api_key": self._maybe_encrypt(api_key),
             "models": ["claude-3-opus", "claude-3-sonnet", "claude-3-haiku"]
         }
         self.config_data["gateway"]["providers"].append(provider)
@@ -137,7 +168,7 @@ class OnboardingWizard:
         self.config_data["gateway"]["agents"]["default"] = f"ollama/{model}"
 
     def step_2_soul_generation(self):
-        print("\nStep 2/4 — 定義 AI 靈魂 (SOUL) 📝")
+        print("\nStep 3/5 — 定義 AI 靈魂 (SOUL) 📝")
         print("您可以稍後在 Dashboard 修改，但現在我們需要一個基礎。")
         choice = input("是否要建立基礎的 SOUL.md? [Y/n]: ").strip().lower()
         
@@ -165,7 +196,7 @@ A general-purpose AI assistant powered by AgentOS.
             print("⏭️ 跳過 SOUL 產生。")
 
     def step_3_messenger(self):
-        print("\nStep 3/4 — 選擇通訊方式 💬")
+        print("\nStep 4/5 — 選擇通訊方式 💬")
         print("  [1] 僅 Terminal (終端機直接對白)")
         print("  [2] Telegram Bot (遠端控制)")
         
@@ -177,13 +208,13 @@ A general-purpose AI assistant powered by AgentOS.
             elif choice == "2":
                 print("\n🔗 請找 @BotFather 建立機器人並取得 Token")
                 token = getpass.getpass("🤖 請輸入 Telegram Bot Token: ").strip()
-                self.config_data["messenger"]["telegram"]["bot_token"] = token
+                self.config_data["messenger"]["telegram"]["bot_token"] = self._maybe_encrypt(token)
                 break
             else:
                 print("❌ 請輸入 1 或 2")
 
     def save_config(self):
-        print("\nStep 4/4 — 儲存設定 💾")
+        print("\nStep 5/5 — 儲存設定 💾")
         try:
             with open(self.config_path, "w", encoding="utf-8") as f:
                 yaml.dump(self.config_data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
@@ -192,6 +223,14 @@ A general-purpose AI assistant powered by AgentOS.
             except Exception as e:
                 print(f"⚠️ 無法修改設定檔權限: {e}")
             print(f"✅ 設定檔已儲存至 {self.config_path} (權限已設為 600)")
+            
+            if self.master_password:
+                print("\n" + "!"*50)
+                print("⚠️  重要提醒：您啟用了 API Key 加密。")
+                print("⚠️  下次啟動前，請務必匯出密碼環境變數：")
+                print(f"⚠️  export AGENTOS_MASTER_KEY='{self.master_password}'")
+                print("!"*50)
+                
         except Exception as e:
             print(f"❌ 儲存設定失敗: {e}")
             sys.exit(1)

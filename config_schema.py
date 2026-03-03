@@ -186,6 +186,7 @@ def load_config(config_path: Optional[str] = None) -> AgentOSConfig:
     載入 config.yaml 並回傳 AgentOSConfig。
     缺少的欄位自動填入安全預設值。
     檔案不存在時回傳全預設設定。
+    支援 Fernet 加密 (ENC[...]) 自動解密。
     """
     if config_path is None:
         path = get_config_path()
@@ -200,16 +201,30 @@ def load_config(config_path: Optional[str] = None) -> AgentOSConfig:
 
     config = _dict_to_dataclass(AgentOSConfig, raw)
     
-    # -- 環境變數覆寫 (Environment Variable Overrides) --
-    # 這裡覆寫 Provider API Key
+    # 嘗試載入解密模組
+    try:
+        from utils.secret_manager import decrypt_value, is_encrypted
+    except ImportError:
+        decrypt_value = lambda x: x
+        is_encrypted = lambda x: False
+
+    # -- 解密與環境變數覆寫 (Environment Variable Overrides) --
     for provider in config.gateway.providers:
+        # 1. 如果設定檔內是加密的，先解密
+        if is_encrypted(provider.api_key):
+            provider.api_key = decrypt_value(provider.api_key)
+            
+        # 2. 如果宣告了環境變數，最高優先級覆寫
         env_key = f"AGENTOS_{provider.name.upper()}_API_KEY"
         if env_val := os.environ.get(env_key):
             provider.api_key = env_val
             
-    # 覆寫 Telegram Bot Token
+    # Telegram Bot Token 解密與覆寫
+    tg = config.messenger.telegram
+    if is_encrypted(tg.bot_token):
+        tg.bot_token = decrypt_value(tg.bot_token)
     if env_tg := os.environ.get("AGENTOS_TELEGRAM_BOT_TOKEN"):
-        config.messenger.telegram.bot_token = env_tg
+        tg.bot_token = env_tg
         
     return config
 
