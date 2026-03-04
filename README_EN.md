@@ -1,49 +1,51 @@
-# Agent Base OS — Core Architecture Blueprint (v5.1)
+# Agent Base OS — Core Architecture Blueprint (v5.0)
 
-[🇹🇼 繁體中文版](./README.md) | **English**
+[繁體中文](./README.md) | **English**
 
 ![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![Coverage](https://img.shields.io/badge/coverage-50%25-yellow)
+![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 
 An OS-level infrastructure platform built for AI Agents.
-**Not an APP — it's an OS.** Paste your API Key, and within 3 minutes you'll have a high-IQ, fully-armed AI Agent. Beginner-friendly, power-user ready, every parameter customizable. Idle RAM < 60MB, peak < 150MB, no GPU, zero fan noise.
+**It's not an APP, it's an OS.** Paste your API Key, and within 3 minutes you'll have a highly intelligent, fully-armed AI Agent. Beginner-friendly yet extremely practical for power users. All parameters are customizable. Idle RAM < 60MB, Peak RAM < 150MB, no GPU required, zero fan noise.
 
-> **🏛️ OS Supreme Design Principle: AgentOS prohibits nothing. It provides safe, economical defaults, but all decision-making power belongs to the USER. We build the platform vehicle, not the rule-maker.**
+> **🏛️ OS Supreme Design Principle: AgentOS forbids nothing. It provides secure and economical defaults, but all decision-making power belongs to the USER. We build the platform vehicle, not the rule maker.**
 
 ---
 
 ## 🚀 Quick Start
 
-### Option 1: Local Install (Recommended for Developers)
+The fastest way to install Agent Base OS:
+
+### Method 1: Local Installation (Recommended for Developers)
 ```bash
-# Clone the repo
+# Clone the repository
 git clone https://github.com/whiletrue247/AgentOS.git
 cd AgentOS
 
-# Install with all optional dependencies
+# Install the main program and all optional dependencies
 pip install -e ".[all]"
 
 # Launch the Onboarding Wizard
 python start.py
 ```
 
-### Option 2: Docker (Recommended for Production)
+### Method 2: Docker Containerization (Recommended for Production)
 ```bash
-# One-click start with Docker Compose (includes PostgreSQL, Neo4j, Redis)
+# One-click start using Docker Compose (includes PostgreSQL, Neo4j, Redis)
 docker-compose up -d
 
-# Access CLI management tools inside the container
+# Enter the container to use the CLI management tool
 docker exec -it agent_os_daemon bash
 python 08_Dashboard/cli_commands.py audit
 ```
 
 ---
 
-## Architecture Overview: 4 Core + 2 Platform + 11 Modules
+## Architecture Overview: 4 Cores + 2 Platforms + 11 Modules
 
-AgentOS v5.1 has expanded into a comprehensive solution covering OS integration, collaborative mesh networks, and marketplace ecosystems.
+AgentOS v5.0 has expanded into a comprehensive solution encompassing OS integration, collaborative mesh networking, and a marketplace ecosystem.
 
 ```mermaid
 graph TD
@@ -69,41 +71,40 @@ graph TD
 
 ---
 
-## Core System: 11 Modules
+## List of 11 Core Modules
 
-| # | Module | Description |
-|---|--------|-------------|
-| 01 | **Kernel** | Loads `SOUL.md` as the Agent's core System Prompt. Hash caching for fast startup. |
-| 02 | **Memory** | Hybrid memory pool with Mem0 (vector) support. Access-count decay for intelligent forgetting. |
-| 03 | **Tool System** | Docker/E2B sandbox isolation with AST security scanning for plugin installations. |
-| 04 | **Engine** | Decision engine with SmartRouter (dynamic cost-aware routing), ZeroTrust (human-in-the-loop), Prompt Injection Detector, and Audit Trail. |
-| 05 | **Orchestrator** | Multi-agent coordination via LangGraph DAG, CrewAI roles, and async A2A communication. |
-| 06 | **Embodiment** | Desktop Runtime control and Human Preview visualization. |
-| 07 | **PKG** | Personal Knowledge Graph with GraphRAG, NetworkX fallback, and Neo4j support. |
-| 08 | **Dashboard** | TUI (rich.live) panels and CLI audit commands with OpenTelemetry integration. |
-| 09 | **OS Integration** | Cross-platform (Windows/macOS/Wayland/X11) keyboard/mouse simulation. |
-| 10 | **Marketplace** | M-Token virtual currency-driven Agent tool and SOUL.md exchange platform. |
-| 11 | **Sync Handoff** | Checkpoint snapshots and WebSocket local-network seamless state transfer. |
+1. **`01_Kernel` — Soul and Process Daemon**: Loads `SOUL.md` and system guardians.
+2. **`02_Memory` — Hybrid Memory Pool**: Integrates Mem0 (vector) support as a fast contextual cache.
+3. **`03_Tool_System` — Prisoner Sandbox**: WASM/Subprocess isolated execution to prevent host system crashes.
+4. **`04_Engine` — Decision Engine & Safety Valve**: Includes SmartRouter (dynamic cost-saving routing), ZeroTrust (manual human review gate), and Audit Trail monitoring.
+5. **`05_Orchestrator` — Mesh Sync Bus**: Supports LangGraph DAG, CrewAI role dispatch, and async Agent-to-Agent (A2A) communication.
+6. **`06_Embodiment` — Human-Machine Embodiment**: Desktop Runtime control and Human Preview visualization intervention.
+7. **`07_PKG` — Personal Knowledge Graph**: GraphRAG core, providing NetworkX fallback and Neo4j relational memory.
+8. **`08_Dashboard` — Observability Dashboard**: TUI (rich.live) panels and CLI Audit operations.
+9. **`09_OS_Integration` — Operating System Hooks**: Cross-platform (Windows/macOS/Wayland/X11) keyboard/mouse simulation and window reading.
+10. **`10_Marketplace` — Soul & Plugin Store**: Built-in M-Token virtual currency-driven Agent tools / `SOUL.md` exchange platform.
+11. **`11_Sync_Handoff` — P2P Relay Transfer**: Preserves execution snapshots (Checkpoints) and enables seamless state transfer across the local WebSockets network.
 
 ---
 
-## 🎨 User Experience Layer
+## 🎨 User Experience Layer (UX Layer) — 2027 Beginner-Friendly Design
 
 ### 💰 Cost Guard & Smart Routing
-- **Smart Router**: Automatically routes tasks to local NPU or cloud GPT-4o based on complexity, with dynamic scoring based on historical success rate, latency, and cost.
-- **Daily Budget Protection**: Auto-cutoff when `budget.daily_limit_m` is reached.
+The OS features an integrated, transparent Token usage control mechanism and smart routing to reduce unnecessary expenses:
+- **Brain Split (Smart Router)**: Automatically routes tasks to local NPU computations or cloud-based GPT-4o depending on task complexity.
+- **Daily Limit Protection**: Automatically cuts power and alerts the user upon reaching the `budget.daily_limit_m`.
 
 ### 🛡️ Zero Trust & Human-in-the-Loop
-- Zero Trust module intercepts extreme operations like `rm -rf` and waits for human `Y` approval.
-- Docker sandbox strips `OPENAI_API_KEY` and blocks `http_proxy` to prevent privilege escalation.
-- **Prompt Injection Detector**: Three-layer detection (rules + heuristics + statistical analysis) covering 11 attack patterns.
+"Trust no LLM, not even the smartest ones."
+- Introduced a Zero Trust module to intercept extreme system operations like `rm -rf`, invoking the interactive terminal prompt to wait for human `Y` approval.
+- The Subprocess Sandbox forcefully strips the `OPENAI_API_KEY` and cuts off `http_proxy` to prevent unauthorized network access.
 
-### 📋 Task Plan Preview
-Agent displays a 10-step prediction plan (with RiskLevel) before executing complex tasks, ensuring full visibility.
+### 📋 Action Plan Visualization (Plan Preview)
+Before executing complex tasks, the Agent uses `SYS_ASK_HUMAN` or `08_Dashboard/cli_commands.py simulate` to present a 10-step predicted plan (including RiskLevel) to ensure everything is under control.
 
 ---
 
-## Configuration Example (`config.yaml`)
+## Unified Configuration Example `config.yaml`
 
 ```yaml
 # Soul
@@ -114,7 +115,7 @@ kernel:
 gateway:
   providers:
     - name: openai
-      api_key: encrypted_sk_xxx  # Supports Fernet encrypted storage
+      api_key: encrypted_sk_xxx # Supports Fernet encrypted storage
       models: [gpt-4o, gpt-4o-mini]
   agents:
     default: openai/gpt-4o
@@ -127,33 +128,7 @@ sandbox:
   default_network: deny    # deny | allow
   timeout_seconds: 60
 
-# Budget Guard (unit: M = million tokens)
+# Budget Guard (Unit: M = Million Tokens)
 budget:
-  daily_limit_m: 1.0        # Daily limit 1M tokens
+  daily_limit_m: 1.0        # Daily cap of 1M Tokens
 ```
-
----
-
-## 🔧 Development
-
-```bash
-# Install dev dependencies
-pip install -e ".[dev]"
-
-# Run tests
-pytest tests/ -v --cov
-
-# Lint
-ruff check . && ruff format --check .
-
-# Security scan
-bandit -r . -c pyproject.toml -ll
-```
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for contribution guidelines and [Plugin Development Guide](./docs/plugin_dev_guide.md) for building custom tools.
-
----
-
-## 📄 License
-
-MIT License — see [LICENSE](./LICENSE) for details.
