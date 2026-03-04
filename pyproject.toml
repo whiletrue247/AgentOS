@@ -80,8 +80,12 @@ security = [
     "bandit[toml]>=1.7",
     "safety>=3.0",
 ]
+observability = [
+    "opentelemetry-api>=1.20",
+    "opentelemetry-sdk>=1.20",
+]
 all = [
-    "agentos[llm,orchestration,knowledge,vector,computer-use,telegram,e2b,dev,security]",
+    "agentos[llm,orchestration,knowledge,vector,computer-use,telegram,e2b,dev,security,observability]",
 ]
 
 [project.scripts]
@@ -132,3 +136,10 @@ omit = ["*/tests/*", "*/__pycache__/*"]
 [tool.coverage.report]
 show_missing = true
 fail_under = 35  # B.3: 暫時設為 35%，後續待補齊更完整單元測試以達 70%
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "01_Kernel", "02_Memory", "03_Tool_System", "04_Engine",
+    "05_Orchestrator", "06_Embodiment", "07_PKG", "08_Dashboard",
+    "09_OS_Integration", "10_Marketplace", "11_Sync_Handoff", "contracts"
+]

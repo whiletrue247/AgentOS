@@ -374,6 +374,68 @@ class A2ABus:
         return final_state.get("results", {})
 
     # ----------------------------------------------------------
+    # Topology Export (FlowBuilder Visualization)
+    # ----------------------------------------------------------
+    def export_topology_mermaid(self, planner: Any, title: str = "AgentOS A2A Flow") -> str:
+        """
+        將當前 Planner 內的任務拓撲匯出為 Mermaid 格式 (Markdown) 字串。
+        供 FlowBuilder 或 Dashboard 視覺化渲染。
+        """
+        if not planner or not hasattr(planner, "current_plan") or not planner.current_plan:
+            return "graph TD\n    A[No Active Plan]"
+
+        tasks = planner.current_plan.tasks
+        
+        mermaid_lines = [
+            "```mermaid",
+            "graph TD",
+            f"    %% {title}",
+            "    classDef default fill:#1e1e1e,stroke:#4caf50,stroke-width:2px,color:#fff;",
+            "    classDef dependency fill:#2d2d2d,stroke:#ff9800,stroke-width:2px,color:#fff,stroke-dasharray: 5 5;"
+        ]
+
+        # 創造起始點
+        mermaid_lines.append(f"    START((Start))")
+        
+        # 紀錄所有節點
+        for task in tasks:
+            node_id = task.id.replace("-", "_")
+            role = task.assigned_to or "Auto"
+            label = f"{task.id}<br/><i>({role})</i>"
+            mermaid_lines.append(f"    {node_id}[\"{label}\"]")
+
+        # 建立邊緣 (Edges)
+        no_deps_nodes = []
+        for task in tasks:
+            node_id = task.id.replace("-", "_")
+            if not getattr(task, "depends_on", []):
+                no_deps_nodes.append(node_id)
+            else:
+                for dep in task.depends_on:
+                    dep_id = dep.replace("-", "_")
+                    mermaid_lines.append(f"    {dep_id} --> {node_id}")
+
+        # 將沒有依賴的節點連到 START
+        for node_id in no_deps_nodes:
+            mermaid_lines.append(f"    START --> {node_id}")
+
+        # 創造終點
+        mermaid_lines.append(f"    END((End))")
+        
+        # 將沒有被任何人依賴的節點連到 END (找出葉節點)
+        all_deps = set()
+        for task in tasks:
+            all_deps.update(getattr(task, "depends_on", []))
+            
+        for task in tasks:
+            if task.id not in all_deps:
+                node_id = task.id.replace("-", "_")
+                mermaid_lines.append(f"    {node_id} --> END")
+
+        mermaid_lines.append("```")
+        return "\n".join(mermaid_lines)
+
+    # ----------------------------------------------------------
     # Asyncio Fallback (when langgraph is not installed)
     # ----------------------------------------------------------
     async def run_dag(

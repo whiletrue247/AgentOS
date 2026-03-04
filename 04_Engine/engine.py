@@ -40,6 +40,8 @@ from contracts.interfaces import (
 
 logger = logging.getLogger(__name__)
 
+from .otel_tracer import trace_span
+
 # Callback type
 EventHandler = Callable[[EngineEvent], Any]
 
@@ -196,6 +198,7 @@ class Engine:
     # 核心 ReAct Loop
     # ========================================
 
+    @trace_span("Engine.handle_message")
     async def handle_message(
         self,
         user_message: str,

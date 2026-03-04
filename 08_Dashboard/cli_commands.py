@@ -21,13 +21,22 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 try:
     from engine.simulator import AgentSimulator
     from engine.audit_trail import get_audit_trail
+    from orchestrator.task_planner import TaskPlanner
+    from orchestrator.a2a_bus import A2ABus
 except ImportError:
     try:
         from simulator import AgentSimulator
         from audit_trail import get_audit_trail
+        import importlib
+        task_planner_mod = importlib.import_module("05_Orchestrator.task_planner")
+        TaskPlanner = task_planner_mod.TaskPlanner
+        a2a_bus_mod = importlib.import_module("05_Orchestrator.a2a_bus")
+        A2ABus = a2a_bus_mod.A2ABus
     except ImportError:
         AgentSimulator = None
         get_audit_trail = None
+        TaskPlanner = None
+        A2ABus = None
 
 
 class DummyGateway:
@@ -127,6 +136,39 @@ def audit_cmd(days: int):
         console.print(f"[red]Error generating audit report:[/] {e}")
 
 
+def flow_cmd(objective: str):
+    console = Console()
+    console.print(f"[bold cyan]🕸️  Generating FlowBuilder Topology for:[/] {objective}")
+    
+    if TaskPlanner is None or A2ABus is None:
+        console.print("[red]Error: Orchestrator modules not found. Ensure 05_Orchestrator is accessible.[/]")
+        return
+        
+    try:
+        planner = TaskPlanner()
+        # 產生計畫
+        import asyncio
+        asyncio.run(planner.plan_objective(objective))
+        
+        bus = A2ABus(engine=DummyEngine())
+        mermaid_str = bus.export_topology_mermaid(planner, title=f"Flow: {objective}")
+        
+        # 寫入到檔案
+        output_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "docs", "flow_diagram.md"))
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(f"# AgentOS FlowBuilder Preview\n\n> Objective: {objective}\n\n{mermaid_str}\n")
+            
+        console.print(f"[green]✅ Topology exported to [bold]{output_path}[/bold][/]")
+        console.print("\n[dim]Preview:[/dim]")
+        
+        # 在終端機也印出一份
+        md = Markdown(mermaid_str)
+        console.print(md)
+        
+    except Exception as e:
+        console.print(f"[red]Error generating flow topology:[/] {e}")
+
 def main():
     parser = argparse.ArgumentParser(description="AgentOS CLI Commands")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -137,12 +179,17 @@ def main():
     audit_parser = subparsers.add_parser("audit", help="Generate security audit report")
     audit_parser.add_argument("--days", type=int, default=7, help="Number of days to include in report")
     
+    flow_parser = subparsers.add_parser("flow", help="Export Agent topology as Mermaid DAG")
+    flow_parser.add_argument("objective", type=str, help="The goal to build the flow for")
+    
     args = parser.parse_args()
     
     if args.command == "simulate":
         asyncio.run(simulate_cmd(args.objective))
     elif args.command == "audit":
         audit_cmd(args.days)
+    elif args.command == "flow":
+        flow_cmd(args.objective)
     else:
         parser.print_help()
 

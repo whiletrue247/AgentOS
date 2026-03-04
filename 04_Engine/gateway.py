@@ -138,8 +138,8 @@ class APIGateway:
         return f"{prefix}{model}"
 
     # ----------------------------------------------------------
-    # 核心呼叫
     # ----------------------------------------------------------
+    @trace_span("Gateway.call")
     async def call(
         self,
         messages: list[dict],
